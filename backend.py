@@ -1,55 +1,70 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 
 app = FastAPI()
 
-# --- DB setup ---
-with sqlite3.connect("bot_users.db") as conn:
-    c = conn.cursor()
-    c.execute("""
+DB_NAME = "bot_users.db"
+
+# --- DB Init ---
+def init_db():
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             username TEXT,
             last_message_time TEXT
         )
-    """)
-    conn.commit()
+        """)
+        conn.commit()
+
+init_db()
 print("Backend DB ready ✅")
 
-# --- Pydantic models ---
-class User(BaseModel):
-    telegram_id: int
-    username: str
-
-class Message(BaseModel):
-    telegram_id: int
-    text: str
-
-# --- Store user endpoint ---
+# --- Store user ---
 @app.post("/user/store")
-def store_user(user: User):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with sqlite3.connect("bot_users.db") as conn:
+def store_user(data: dict):
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT OR REPLACE INTO users
+                (telegram_id, username, last_message_time)
+                VALUES (?, ?, ?)
+            """, (
+                data["telegram_id"],
+                data["username"],
+                data["last_message_time"]
+            ))
+            conn.commit()
+        return {"status": "stored"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- Get reply ---
+@app.post("/reply/get")
+def get_reply(data: dict):
+    text = data.get("text", "").lower()
+
+    if "hello" in text:
+        return {"reply": "Hello miya vai 😄"}
+    elif "price" in text:
+        return {"reply": "Current price is 100$ 💰"}
+    else:
+        return {"reply": "Sorry, I didn't understand 😅"}
+
+# --- Retarget old users ---
+@app.get("/retarget/users")
+def retarget_users():
+    limit_time = (datetime.now() - timedelta(days==3)).strftime("%Y-%m-%d %H:%M:%S")
+
+    with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
         c.execute("""
-            INSERT OR REPLACE INTO users (telegram_id, username, last_message_time)
-            VALUES (?, ?, ?)
-        """, (user.telegram_id, user.username, now))
-        conn.commit()
-    return {"status": "success", "message": f"User {user.username} stored"}
+            SELECT telegram_id FROM users
+            WHERE last_message_time < ?
+        """, (limit_time,))
+        users = c.fetchall()
 
-# --- Get reply endpoint ---
-@app.post("/reply/get")
-def get_reply(message: Message):
-    text = message.text.lower()
-    
-    if "price" in text:
-        reply = "Current price is 100$"
-    elif "hello" in text:
-        reply = "Hello miya vai 😄"
-    else:
-        reply = "Sorry, I didn't understand 😅"
-    
-    return {"reply": reply}
+    return {"users": [u[0] for u in users]}
