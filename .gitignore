@@ -1,9 +1,4 @@
-<<<<<<< HEAD
 .env
 __pycache__/
+*.db
 *.log
-=======
-.env
-__pycache__/
-*.log
->>>>>>> 88828810f39e25d4e1ef6fb4f5a8a8323ec07e09
