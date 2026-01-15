@@ -1,4 +1,4 @@
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import RetryAfter
 from datetime import datetime
 import requests
@@ -7,26 +7,24 @@ import logging
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load env
 load_dotenv()
-
 TOKEN = os.getenv("BOT_TOKEN")
 BACKEND_URL = "http://127.0.0.1:8000"
 
-# Logging setup
+# Logging
 logging.basicConfig(
-    filename="bot.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Start command
+# ---------------- START ----------------
 async def start(update, context):
     await update.message.reply_text(
         "Hello miya vai 😄\nBot is running safely 🔐"
     )
 
-# Message handler
+# ---------------- MESSAGE HANDLER ----------------
 async def handle_message(update, context):
     user = update.message.from_user
     text = update.message.text
@@ -39,20 +37,45 @@ async def handle_message(update, context):
 
     try:
         requests.post(f"{BACKEND_URL}/user/store", json=data, timeout=3)
+
         r = requests.post(
             f"{BACKEND_URL}/reply/get",
             json={"text": text},
             timeout=3
         )
-        reply = r.json().get("reply", "Backend issue 😅")
+
+        reply = r.json().get("reply", "Backend error 😅")
 
     except Exception as e:
-        logging.error(f"Backend error: {e}")
-        reply = "Server busy 😅 Try later."
+        logging.error(e)
+        reply = "Server busy 😅"
 
     await update.message.reply_text(reply)
 
-# Broadcast command
+# ---------------- AUTO RETARGET JOB ----------------
+async def retarget_job(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        r = requests.get(f"{BACKEND_URL}/retarget/users", timeout=3)
+        users = r.json().get("users", [])
+    except Exception as e:
+        logging.error(f"Retarget fetch failed: {e}")
+        return
+
+    for uid in users:
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text="👋 Hey miya vai! We miss you 😄\nCome back and chat with us!"
+            )
+            await asyncio.sleep(2)  # flood safety
+
+        except RetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+
+        except Exception as e:
+            logging.error(f"Retarget send failed {uid}: {e}")
+
+# ---------------- MANUAL BROADCAST ----------------
 async def broadcast(update, context):
     await update.message.reply_text("Broadcast started 🚀")
 
@@ -60,7 +83,7 @@ async def broadcast(update, context):
         r = requests.get(f"{BACKEND_URL}/retarget/users", timeout=5)
         users = r.json().get("users", [])
     except Exception as e:
-        logging.error(f"User fetch failed: {e}")
+        logging.error(f"Broadcast fetch failed: {e}")
         await update.message.reply_text("Backend down ❌")
         return
 
@@ -68,25 +91,27 @@ async def broadcast(update, context):
         try:
             await context.bot.send_message(
                 chat_id=uid,
-                text="🔥 Hey miya vai! New update available 💰"
+                text="🔥 New update available miya vai 💰"
             )
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2)
 
         except RetryAfter as e:
-            logging.warning(f"FloodWait: sleeping {e.retry_after}")
             await asyncio.sleep(e.retry_after)
 
         except Exception as e:
-            logging.error(f"Send failed {uid}: {e}")
+            logging.error(f"Broadcast send failed {uid}: {e}")
 
     await update.message.reply_text("Broadcast done ✅")
 
-# App setup
+# ---------------- APP SETUP ----------------
 app = Application.builder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# ⏱ Auto retarget every 10 seconds
+app.job_queue.run_repeating(retarget_job, interval=10, first=5)
 
 print("🤖 Bot running safely...")
 app.run_polling()

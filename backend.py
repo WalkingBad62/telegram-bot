@@ -50,7 +50,7 @@ def get_reply(data: dict):
     text = data.get("text", "").lower()
 
     if "hello" in text:
-        return {"reply": "Hello miya vai 😄"}
+        return {"reply": "Hello gaja vai 😄"}
     elif "price" in text:
         return {"reply": "Current price is 100$ 💰"}
     else:
@@ -80,3 +80,5 @@ def get_all_users():
         users = c.fetchall()
 
     return {"users": [{"telegram_id": user[0], "username": user[1]} for user in users]}
+
+# python -m uvicorn backend:app --host 0.0.0.0 --port 8000
