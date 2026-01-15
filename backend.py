@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from datetime import datetime, timedelta
 import sqlite3
+import os
 
 app = FastAPI()
 
-DB_NAME = "bot_users.db"
+# For Render deployment - use environment variable or default
+DB_NAME = os.getenv("DATABASE_URL", "bot_users.db")
 
 # --- DB Init ---
 def init_db():
@@ -57,7 +59,7 @@ def get_reply(data: dict):
 # --- Retarget old users ---
 @app.get("/retarget/users")
 def retarget_users():
-    limit_time = (datetime.now() - timedelta(days==3)).strftime("%Y-%m-%d %H:%M:%S")
+    limit_time = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
 
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
@@ -68,3 +70,13 @@ def retarget_users():
         users = c.fetchall()
 
     return {"users": [u[0] for u in users]}
+
+# --- Get all users ---
+@app.get("/users")
+def get_all_users():
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT telegram_id, username FROM users")
+        users = c.fetchall()
+
+    return {"users": [{"telegram_id": user[0], "username": user[1]} for user in users]}
