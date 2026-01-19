@@ -43,9 +43,33 @@ async def store_user(update):
     except:
         pass
 
+
 # ================= NORMAL MESSAGE =================
 async def normal_message(update, context):
     await store_user(update)
+    import re
+    def normalize(text):
+        return re.sub(r'[^a-z0-9 ]', '', text.strip().lower())
+
+    user_text = normalize(update.message.text)
+    print(f"[DEBUG] User text: {user_text}")
+    try:
+        res = requests.get(f"{BACKEND_URL}/replies")
+        print(f"[DEBUG] Backend /replies status: {res.status_code}")
+        if res.status_code == 200:
+            replies = res.json().get("replies", [])
+            print(f"[DEBUG] Replies fetched: {replies}")
+            for r in replies:
+                if r["active"]:
+                    q_norm = normalize(r["question"])
+                    print(f"[DEBUG] Comparing user_text='{user_text}' to q_norm='{q_norm}'")
+                    if user_text == q_norm:
+                        print(f"[DEBUG] Match found! Reply: {r['reply']}")
+                        await update.message.reply_text(r["reply"])
+                        return
+    except Exception as e:
+        print("Reply fetch error:", e)
+    print("[DEBUG] No match found. Sending fallback message.")
     await update.message.reply_text("Menu খুলে command use করো miya vai 😄")
 
 # ================= ADD CUSTOM COMMAND =================

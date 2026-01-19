@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Totem Bot Admin Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        form { margin-bottom: 30px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; max-width: 400px; }
+        label { display: block; margin-bottom: 8px; }
+        input[type="text"], input[type="file"] { width: 100%; margin-bottom: 12px; }
+        button { padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>Totem Bot Admin Panel</h1>
+    <button id="logoutBtn" style="float:right;">Logout</button>
+    <form id="imageForm" enctype="multipart/form-data">
+        <h2>Send Image</h2>
+        <label>Select Users:</label>
+        <select id="imageUserSelect" name="user_ids" multiple style="width:100%;height:100px;"></select>
+        <label><input type="checkbox" id="imageAllUsers"> Send to All Users</label>
+        <label>Image File:</label>
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit">Send Image</button>
+    </form>
+    <form id="videoForm" enctype="multipart/form-data">
+        <h2>Send Video</h2>
+        <label>Select Users:</label>
+        <select id="videoUserSelect" name="user_ids" multiple style="width:100%;height:100px;"></select>
+        <label><input type="checkbox" id="videoAllUsers"> Send to All Users</label>
+        <label>Video File:</label>
+        <input type="file" name="file" accept="video/*" required>
+        <button type="submit">Send Video</button>
+    </form>
+    <form id="messageForm">
+        <h2>Send Message</h2>
+        <label>Select Users:</label>
+        <select id="userSelect" name="user_ids" multiple style="width:100%;height:100px;"></select>
+        <label><input type="checkbox" id="allUsers"> Send to All Users</label>
+        <label>Message:</label>
+        <input type="text" name="message" required>
+        <button type="submit">Send Message</button>
+    </form>
+    <div id="result"></div>
+    <div id="authError" style="color:red;"></div>
+    <h2>Conversation/Reply Management</h2>
+    <form id="addReplyForm">
+        <input type="text" id="questionInput" placeholder="Common question" required>
+        <input type="text" id="replyInput" placeholder="Bot reply" required>
+        <button type="submit">Add Reply</button>
+    </form>
+    <table id="replyTable" border="1" style="border-collapse:collapse;min-width:400px;">
+        <thead>
+            <tr><th>Question</th><th>Reply</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <h2>User Overview</h2>
+    <table id="userTable" border="1" style="border-collapse:collapse;min-width:400px;">
+        <thead>
+            <tr><th>Telegram ID</th><th>Username</th><th>Last Seen</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <script>
+
+        async function loadReplies() {
+            const res = await fetch('/replies');
+            if (res.status === 401) {
+                document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                setTimeout(() => window.location.href = '/admin/login', 1500);
+                return;
+            }
+            const data = await res.json();
+            const tbody = document.getElementById('replyTable').querySelector('tbody');
+            tbody.innerHTML = '';
+            data.replies.forEach(r => {
+                const tr = document.createElement('tr');
+                // Question
+                const tdQ = document.createElement('td');
+                const inputQ = document.createElement('input');
+                inputQ.value = r.question;
+                tdQ.appendChild(inputQ);
+                tr.appendChild(tdQ);
+                // Reply
+                const tdR = document.createElement('td');
+                const inputR = document.createElement('input');
+                inputR.value = r.reply;
+                tdR.appendChild(inputR);
+                tr.appendChild(tdR);
+                // Active
+                const tdA = document.createElement('td');
+                const inputA = document.createElement('input');
+                inputA.type = 'checkbox';
+                inputA.checked = r.active;
+                tdA.appendChild(inputA);
+                tr.appendChild(tdA);
+                // Actions
+                const tdAct = document.createElement('td');
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = 'Save';
+                saveBtn.onclick = async () => {
+                    await fetch(`/replies/${r.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            question: inputQ.value,
+                            reply: inputR.value,
+                            active: inputA.checked
+                        })
+                    });
+                    loadReplies();
+                };
+                tdAct.appendChild(saveBtn);
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.onclick = async () => {
+                    await fetch(`/replies/${r.id}`, { method: 'DELETE' });
+                    loadReplies();
+                };
+                tdAct.appendChild(delBtn);
+                tr.appendChild(tdAct);
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('addReplyForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const question = document.getElementById('questionInput').value;
+            const reply = document.getElementById('replyInput').value;
+            await fetch('/replies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, reply })
+            });
+            document.getElementById('questionInput').value = '';
+            document.getElementById('replyInput').value = '';
+            loadReplies();
+        };
+
+        loadReplies();
+        // Logout button handler
+        document.getElementById('logoutBtn').onclick = function() {
+            fetch('/admin/logout').then(() => {
+                window.location.href = '/admin/login';
+            });
+        };
+        async function loadUsers() {
+            try {
+                const res = await fetch('/users');
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                // Populate selects
+                const selects = [document.getElementById('userSelect'), document.getElementById('imageUserSelect'), document.getElementById('videoUserSelect')];
+                selects.forEach(select => {
+                    select.innerHTML = '';
+                    data.users.forEach(u => {
+                        const option = document.createElement('option');
+                        option.value = u.telegram_id;
+                        option.text = u.username ? `${u.username} (${u.telegram_id})` : u.telegram_id;
+                        select.appendChild(option);
+                    });
+                });
+                // Populate user overview table
+                const tbody = document.getElementById('userTable').querySelector('tbody');
+                tbody.innerHTML = '';
+                data.users.forEach(u => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || ''}</td><td>${u.last_message_time || ''}</td>`;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                document.getElementById('authError').innerText = 'Error loading users.';
+            }
+        }
+        loadUsers();
+
+        document.getElementById('imageForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const all = document.getElementById('imageAllUsers').checked;
+            let user_ids = [];
+            if (!all) {
+                user_ids = Array.from(document.getElementById('imageUserSelect').selectedOptions).map(o => o.value);
+                if (user_ids.length === 0) {
+                    document.getElementById('result').innerText = 'Please select at least one user or choose All Users.';
+                    return;
+                }
+            }
+            const formData = new FormData();
+            formData.append('file', this.file.files[0]);
+            formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
+            const res = await fetch('/send/image/bulk', { method: 'POST', body: formData });
+            let result = await res.json();
+            if (result.failed && result.failed.length === 0) {
+                document.getElementById('result').innerText = `✅ Image sent to ${result.sent.length} user(s).`;
+            } else if (result.failed && result.failed.length > 0) {
+                document.getElementById('result').innerText = `Some images failed: ${JSON.stringify(result.failed)}`;
+            } else {
+                document.getElementById('result').innerText = JSON.stringify(result);
+            }
+        };
+        document.getElementById('imageAllUsers').onchange = function() {
+            document.getElementById('imageUserSelect').disabled = this.checked;
+        };
+
+        document.getElementById('videoForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const all = document.getElementById('videoAllUsers').checked;
+            let user_ids = [];
+            if (!all) {
+                user_ids = Array.from(document.getElementById('videoUserSelect').selectedOptions).map(o => o.value);
+                if (user_ids.length === 0) {
+                    document.getElementById('result').innerText = 'Please select at least one user or choose All Users.';
+                    return;
+                }
+            }
+            const formData = new FormData();
+            formData.append('file', this.file.files[0]);
+            formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
+            const res = await fetch('/send/video/bulk', { method: 'POST', body: formData });
+            let result = await res.json();
+            if (result.failed && result.failed.length === 0) {
+                document.getElementById('result').innerText = `✅ Video sent to ${result.sent.length} user(s).`;
+            } else if (result.failed && result.failed.length > 0) {
+                document.getElementById('result').innerText = `Some videos failed: ${JSON.stringify(result.failed)}`;
+            } else {
+                document.getElementById('result').innerText = JSON.stringify(result);
+            }
+        };
+        document.getElementById('videoAllUsers').onchange = function() {
+            document.getElementById('videoUserSelect').disabled = this.checked;
+        };
+
+        document.getElementById('messageForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const all = document.getElementById('allUsers').checked;
+            const message = this.message.value;
+            let user_ids = [];
+            if (!all) {
+                user_ids = Array.from(document.getElementById('userSelect').selectedOptions).map(o => o.value);
+                if (user_ids.length === 0) {
+                    document.getElementById('result').innerText = 'Please select at least one user or choose All Users.';
+                    return;
+                }
+            }
+            const res = await fetch('/send/message/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids, message, all })
+            });
+            let result = await res.json();
+            if (result.failed && result.failed.length === 0) {
+                document.getElementById('result').innerText = `✅ Message sent to ${result.sent.length} user(s).`;
+            } else if (result.failed && result.failed.length > 0) {
+                document.getElementById('result').innerText = `Some messages failed: ${JSON.stringify(result.failed)}`;
+            } else {
+                document.getElementById('result').innerText = JSON.stringify(result);
+            }
+        };
+        document.getElementById('allUsers').onchange = function() {
+            document.getElementById('userSelect').disabled = this.checked;
+        };
+    </script>
+</body>
+</html>
