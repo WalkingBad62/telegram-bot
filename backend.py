@@ -59,7 +59,7 @@ def get_reply(data: dict):
 # --- Retarget old users ---
 @app.get("/retarget/users")
 def retarget_users():
-    limit_time = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+    limit_time = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
 
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
@@ -81,4 +81,5 @@ def get_all_users():
 
     return {"users": [{"telegram_id": user[0], "username": user[1]} for user in users]}
 
+# To run the backend server, use:
 # python -m uvicorn backend:app --host 0.0.0.0 --port 8000
