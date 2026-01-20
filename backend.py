@@ -1,4 +1,8 @@
 
+from typing import List, Optional
+from fastapi.responses import JSONResponse
+from fastapi import Form, UploadFile, File, Request
+
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, Response, Depends, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -37,7 +41,60 @@ init_db()
 templates = Jinja2Templates(directory="templates")
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"))
-# --- CRUD Endpoints for Conversation/Reply Management ---
+
+# --- Send message, images, and videos to multiple users ---
+@app.post("/send/all/bulk")
+async def send_all_bulk(
+    request: Request,
+    user_ids: str = Form(...),
+    message: str = Form(""),
+    images: List[UploadFile] = File([]),
+    videos: List[UploadFile] = File([])
+):
+    if not TELEGRAM_BOT_TOKEN:
+        return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
+    # user_ids is a comma-separated string from the form
+    user_id_list = [int(uid) for uid in user_ids.split(",") if uid.strip()]
+    sent = []
+    failed = []
+    for user_id in user_id_list:
+        # Send message if provided
+        if message:
+            try:
+                resp = requests.post(f"{TELEGRAM_API_URL}/sendMessage", data={"chat_id": user_id, "text": message})
+                if resp.status_code == 200:
+                    sent.append(user_id)
+                else:
+                    failed.append({"user_id": user_id, "error": resp.text, "type": "message"})
+            except Exception as e:
+                failed.append({"user_id": user_id, "error": str(e), "type": "message"})
+        # Send images if provided
+        for image in images:
+            try:
+                file_bytes = await image.read()
+                files = {"photo": (image.filename, file_bytes)}
+                data = {"chat_id": user_id}
+                resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", data=data, files=files)
+                if resp.status_code == 200:
+                    sent.append(user_id)
+                else:
+                    failed.append({"user_id": user_id, "error": resp.text, "type": "image"})
+            except Exception as e:
+                failed.append({"user_id": user_id, "error": str(e), "type": "image"})
+        # Send videos if provided
+        for video in videos:
+            try:
+                file_bytes = await video.read()
+                files = {"video": (video.filename, file_bytes)}
+                data = {"chat_id": user_id}
+                resp = requests.post(f"{TELEGRAM_API_URL}/sendVideo", data=data, files=files)
+                if resp.status_code == 200:
+                    sent.append(user_id)
+                else:
+                    failed.append({"user_id": user_id, "error": resp.text, "type": "video"})
+            except Exception as e:
+                failed.append({"user_id": user_id, "error": str(e), "type": "video"})
+    return JSONResponse({"success": True, "sent": list(set(sent)), "failed": failed})
 from fastapi import status
 
 # Get all replies (public for bot)
@@ -309,7 +366,7 @@ def get_admin_panel(request: Request):
     return templates.TemplateResponse("admin_panel.html", {"request": request})
 
 # local host web
-# $env:TELEGRAM_BOT_TOKEN="Your_Telegram Bot Tocken_Here"
+# $env:TELEGRAM_BOT_TOKEN=" Bot Tocken"
 # To run the backend server, use:
 # python -m uvicorn backend:app --host 0.0.0.0 --port 8000
 # To on the admin panel

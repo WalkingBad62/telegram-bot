@@ -18,15 +18,7 @@
             <button id="logoutBtn" class="btn btn-danger">Logout</button>
         </div>
         <form id="unifiedForm" enctype="multipart/form-data" class="form-section card p-4 shadow-sm">
-            <h2 class="mb-3">Send Message / Image / Video</h2>
-            <div class="mb-3">
-                <label class="form-label">Type:</label>
-                <select id="sendType" name="send_type" class="form-select">
-                    <option value="message">Message</option>
-                    <option value="image">Image</option>
-                    <option value="video">Video</option>
-                </select>
-            </div>
+            <h2 class="mb-3">Send Message, Images, and Videos</h2>
             <div class="mb-3">
                 <label class="form-label">Select Users:</label>
                 <select id="unifiedUserSelect" name="user_ids" multiple class="form-select" style="height:100px;"></select>
@@ -35,17 +27,17 @@
                 <input class="form-check-input" type="checkbox" id="unifiedAllUsers">
                 <label class="form-check-label" for="unifiedAllUsers">Send to All Users</label>
             </div>
-            <div id="messageInputDiv" class="mb-3">
+            <div class="mb-3">
                 <label class="form-label">Message:</label>
                 <input type="text" id="unifiedMessage" name="message" class="form-control">
             </div>
-            <div id="imageInputDiv" class="mb-3" style="display:none;">
-                <label class="form-label">Image File:</label>
-                <input type="file" id="unifiedImageFile" name="image_file" accept="image/*" class="form-control">
+            <div class="mb-3">
+                <label class="form-label">Images:</label>
+                <input type="file" id="unifiedImageFile" name="images" accept="image/*" class="form-control" multiple>
             </div>
-            <div id="videoInputDiv" class="mb-3" style="display:none;">
-                <label class="form-label">Video File:</label>
-                <input type="file" id="unifiedVideoFile" name="video_file" accept="video/*" class="form-control">
+            <div class="mb-3">
+                <label class="form-label">Videos:</label>
+                <input type="file" id="unifiedVideoFile" name="videos" accept="video/*" class="form-control" multiple>
             </div>
             <button type="submit" class="btn btn-primary">Send</button>
         </form>
@@ -189,18 +181,11 @@
             }
         }
         loadUsers();
-        document.getElementById('sendType').onchange = function() {
-            const type = this.value;
-            document.getElementById('messageInputDiv').style.display = (type === 'message') ? '' : 'none';
-            document.getElementById('imageInputDiv').style.display = (type === 'image') ? '' : 'none';
-            document.getElementById('videoInputDiv').style.display = (type === 'video') ? '' : 'none';
-        };
         document.getElementById('unifiedAllUsers').onchange = function() {
             document.getElementById('unifiedUserSelect').disabled = this.checked;
         };
         document.getElementById('unifiedForm').onsubmit = async function(e) {
             e.preventDefault();
-            const type = document.getElementById('sendType').value;
             const all = document.getElementById('unifiedAllUsers').checked;
             let user_ids = [];
             if (!all) {
@@ -210,61 +195,30 @@
                     return;
                 }
             }
-            if (type === 'message') {
-                const message = document.getElementById('unifiedMessage').value;
-                if (!message) {
-                    document.getElementById('result').innerText = 'Please enter a message.';
-                    return;
-                }
-                const res = await fetch('/send/message/bulk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_ids, message, all })
-                });
-                let result = await res.json();
-                if (result.failed && result.failed.length === 0) {
-                    document.getElementById('result').innerText = `✅ Message sent to ${result.sent.length} user(s).`;
-                } else if (result.failed && result.failed.length > 0) {
-                    document.getElementById('result').innerText = `Some messages failed: ${JSON.stringify(result.failed)}`;
-                } else {
-                    document.getElementById('result').innerText = JSON.stringify(result);
-                }
-            } else if (type === 'image') {
-                const fileInput = document.getElementById('unifiedImageFile');
-                if (!fileInput.files[0]) {
-                    document.getElementById('result').innerText = 'Please select an image file.';
-                    return;
-                }
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-                formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
-                const res = await fetch('/send/image/bulk', { method: 'POST', body: formData });
-                let result = await res.json();
-                if (result.failed && result.failed.length === 0) {
-                    document.getElementById('result').innerText = `✅ Image sent to ${result.sent.length} user(s).`;
-                } else if (result.failed && result.failed.length > 0) {
-                    document.getElementById('result').innerText = `Some images failed: ${JSON.stringify(result.failed)}`;
-                } else {
-                    document.getElementById('result').innerText = JSON.stringify(result);
-                }
-            } else if (type === 'video') {
-                const fileInput = document.getElementById('unifiedVideoFile');
-                if (!fileInput.files[0]) {
-                    document.getElementById('result').innerText = 'Please select a video file.';
-                    return;
-                }
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-                formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
-                const res = await fetch('/send/video/bulk', { method: 'POST', body: formData });
-                let result = await res.json();
-                if (result.failed && result.failed.length === 0) {
-                    document.getElementById('result').innerText = `✅ Video sent to ${result.sent.length} user(s).`;
-                } else if (result.failed && result.failed.length > 0) {
-                    document.getElementById('result').innerText = `Some videos failed: ${JSON.stringify(result.failed)}`;
-                } else {
-                    document.getElementById('result').innerText = JSON.stringify(result);
-                }
+            const message = document.getElementById('unifiedMessage').value;
+            const imageFiles = document.getElementById('unifiedImageFile').files;
+            const videoFiles = document.getElementById('unifiedVideoFile').files;
+            if (!message && imageFiles.length === 0 && videoFiles.length === 0) {
+                document.getElementById('result').innerText = 'Please provide at least a message, image, or video.';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
+            for (let i = 0; i < imageFiles.length; i++) {
+                formData.append('images', imageFiles[i]);
+            }
+            for (let i = 0; i < videoFiles.length; i++) {
+                formData.append('videos', videoFiles[i]);
+            }
+            const res = await fetch('/send/all/bulk', { method: 'POST', body: formData });
+            let result = await res.json();
+            if (result.success) {
+                document.getElementById('result').innerText = `✅ Sent to ${result.sent.length} user(s).`;
+            } else if (result.failed && result.failed.length > 0) {
+                document.getElementById('result').innerText = `Some failed: ${JSON.stringify(result.failed)}`;
+            } else {
+                document.getElementById('result').innerText = JSON.stringify(result);
             }
         };
     </script>
