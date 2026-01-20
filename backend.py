@@ -311,6 +311,12 @@ async def send_image_bulk(user_ids: str = Form(...), file: UploadFile = File(...
             resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", data=data, files=files)
             if resp.status_code == 200:
                 sent.append(user_id)
+                # Send a reply message after image is sent
+                reply_data = {"chat_id": user_id, "text": "Image received! Thank you."}
+                try:
+                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", data=reply_data)
+                except Exception:
+                    pass  # Ignore reply errors
             else:
                 failed.append({"user_id": user_id, "error": resp.text})
         return {"sent": sent, "failed": failed}
