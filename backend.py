@@ -1,7 +1,8 @@
 
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, Response, Depends, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.security import OAuth2PasswordRequestForm
 from starlette.middleware.sessions import SessionMiddleware
 from datetime import datetime, timedelta
@@ -32,6 +33,8 @@ def init_db():
 
 init_db()
 
+# Set up Jinja2 templates
+templates = Jinja2Templates(directory="templates")
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"))
 # --- CRUD Endpoints for Conversation/Reply Management ---
@@ -303,7 +306,7 @@ def healthcheck():
 @app.get("/admin")
 def get_admin_panel(request: Request):
     require_login(request)
-    return FileResponse("admin_panel.html")
+    return templates.TemplateResponse("admin_panel.html", {"request": request})
 
 # local host web
 # $env:TELEGRAM_BOT_TOKEN="Your_Telegram Bot Tocken_Here"
