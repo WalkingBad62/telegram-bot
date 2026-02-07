@@ -39,8 +39,14 @@ init_db()
 
 # Set up Jinja2 templates
 templates = Jinja2Templates(directory="templates")
+
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"))
+
+# --- Root endpoint for health check ---
+@app.get("/")
+async def root():
+    return {"status": "Backend is running!"}
 
 # --- Send message, images, and videos to multiple users ---
 @app.post("/send/all/bulk")
@@ -371,10 +377,11 @@ def get_admin_panel(request: Request):
     require_login(request)
     return templates.TemplateResponse("admin_panel.html", {"request": request})
 
+
 # local host web
 # $env:TELEGRAM_BOT_TOKEN=" Bot Tocken"
 # To run the backend server, use:
 # python -m uvicorn backend:app --host 0.0.0.0 --port 8000
 # To on the admin panel
-# http://localhost:8000/admin
+# http://localhost:8000/admin/login
 
