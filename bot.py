@@ -1,8 +1,7 @@
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters
+    filters
 )
-from telegram import BotCommand
 from telegram.error import RetryAfter
 from datetime import datetime
 import asyncio
@@ -26,9 +25,33 @@ logging.basicConfig(level=logging.INFO)
 # ================= MEMORY =================
 custom_commands = {}
 
+# ================= REMOVE MENU =================
+async def remove_menu(app):
+    await app.bot.set_my_commands([])
+
+# ================= SAWA COMMAND =================
+async def sawa(update, context):
+    await store_user(update)
+    await update.message.reply_text("Sawa! 😄")
+
+# ================= AIDI COMMAND =================
+async def aidi(update, context):
+    await store_user(update)
+    user_id = update.message.from_user.id
+    await update.message.reply_text(f"Your Telegram ID: {user_id}")
+
 # ================= START =================
 async def start(update, context):
-    await update.message.reply_text("Hello miya vai 😄\nBot is alive ✅")
+    await store_user(update)
+    welcome_msg = (
+        "Hello miya vai 😄\n"
+        "Bot is alive ✅\n\n"
+        "Available Commands:\n"
+        "/start\n"
+        "/add\n"
+        "/sawa\n"
+    )
+    await update.message.reply_text(welcome_msg)
 
 # ================= STORE USER =================
 async def store_user(update):
@@ -43,71 +66,88 @@ async def store_user(update):
     except:
         pass
 
-
 # ================= NORMAL MESSAGE =================
 async def normal_message(update, context):
     await store_user(update)
+
+    # Admin retarget: forward text to target users
+    if is_admin(update.message.from_user.id):
+        if "retarget_user" in context.user_data or "retarget_all" in context.user_data:
+            await admin_media_handler(update, context)
+            return
+
     import re
     def normalize(text):
         return re.sub(r'[^a-z0-9 ]', '', text.strip().lower())
 
     user_text = normalize(update.message.text)
-    print(f"[DEBUG] User text: {user_text}")
+
     try:
         res = requests.get(f"{BACKEND_URL}/replies")
-        print(f"[DEBUG] Backend /replies status: {res.status_code}")
         if res.status_code == 200:
             replies = res.json().get("replies", [])
-            print(f"[DEBUG] Replies fetched: {replies}")
             for r in replies:
-                if r["active"]:
-                    q_norm = normalize(r["question"])
-                    print(f"[DEBUG] Comparing user_text='{user_text}' to q_norm='{q_norm}'")
-                    if user_text == q_norm:
-                        print(f"[DEBUG] Match found! Reply: {r['reply']}")
-                        await update.message.reply_text(r["reply"])
-                        return
-    except Exception as e:
-        print("Reply fetch error:", e)
-    print("[DEBUG] No match found. Sending fallback message.")
-    await update.message.reply_text("Menu খুলে command use করো miya vai 😄")
+                if r["active"] and normalize(r["question"]) == user_text:
+                    await update.message.reply_text(r["reply"])
+                    return
+    except:
+        pass
+
+    await update.message.reply_text("কোনো reply পাওয়া যায়নি।")
+
+# ================= USER MEDIA HANDLER =================
+async def user_media_handler(update, context):
+    await store_user(update)
+
+    # Admin retarget: forward media to target users
+    if is_admin(update.message.from_user.id):
+        if "retarget_user" in context.user_data or "retarget_all" in context.user_data:
+            await admin_media_handler(update, context)
+            return
+
+    if update.message.photo:
+        await update.message.reply_text("Image received!")
+    elif update.message.video:
+        await update.message.reply_text("Video received!")
+    elif update.message.document:
+        await update.message.reply_text("File received!")
+    elif update.message.audio:
+        await update.message.reply_text("Audio received!")
+    elif update.message.voice:
+        await update.message.reply_text("Voice message received!")
+    else:
+        await update.message.reply_text("Attachment received!")
 
 # ================= ADD CUSTOM COMMAND =================
 async def add_command(update, context):
+    await store_user(update)
     if not is_admin(update.message.from_user.id):
         await update.message.reply_text("❌ Admin only")
         return
+
     if len(context.args) < 2:
         await update.message.reply_text("Usage: /add <command> <reply>")
         return
+
     cmd = context.args[0].lower()
     reply = " ".join(context.args[1:])
     custom_commands[cmd] = reply
-    await update_menu(context.application)
+
     await update.message.reply_text(f"✅ /{cmd} added")
 
 # ================= COMMAND ROUTER =================
 async def command_router(update, context):
     await store_user(update)
+
     cmd = update.message.text.lstrip("/").split()[0].lower()
+
     if cmd in ["start", "add", "retarget", "retarget_all"]:
         return
+
     if cmd in custom_commands:
         await update.message.reply_text(custom_commands[cmd])
     else:
         await update.message.reply_text("❓ Unknown command")
-
-# ================= UPDATE MENU =================
-async def update_menu(app):
-    cmds = [
-        BotCommand("start", "Start bot"),
-        BotCommand("add", "Add custom command (admin)"),
-        BotCommand("retarget", "Admin retarget specific user"),
-        BotCommand("retarget_all", "Admin broadcast (manual)"),
-    ]
-    for c, r in custom_commands.items():
-        cmds.append(BotCommand(c, r[:30]))
-    await app.bot.set_my_commands(cmds)
 
 # ================= FETCH USERS =================
 def get_users():
@@ -117,40 +157,39 @@ def get_users():
     except:
         return []
 
-# ================= RETARGET ALL (MANUAL ONLY) =================
+# ================= RETARGET ALL =================
 async def retarget_all(update, context):
+    await store_user(update)
     if not is_admin(update.message.from_user.id):
         return
+
     context.user_data["retarget_all"] = True
-    await update.message.reply_text(
-        "📢 Now send message / image / video to broadcast"
-    )
+    await update.message.reply_text("📢 Now send message / image / video")
 
 # ================= RETARGET ONE =================
 async def retarget_user(update, context):
+    await store_user(update)
     if not is_admin(update.message.from_user.id):
         return
-    if len(context.args) < 1:
+
+    if not context.args:
         await update.message.reply_text("❌ User ID dao")
         return
-    context.user_data["retarget_user"] = int(context.args[0])
-    await update.message.reply_text(
-        "🎯 Target set.\nNow send message / image / video"
-    )
 
-# ================= HANDLE ADMIN MEDIA =================
+    context.user_data["retarget_user"] = int(context.args[0])
+    await update.message.reply_text("🎯 Target set.\nNow send message / image / video")
+
+# ================= ADMIN MEDIA HANDLER =================
 async def admin_media_handler(update, context):
     if not is_admin(update.message.from_user.id):
         return
 
-    # Single user
     if "retarget_user" in context.user_data:
         uid = context.user_data.pop("retarget_user")
         await forward_any(update, context, [uid])
         await update.message.reply_text("✅ Retarget sent")
         return
 
-    # All users
     if "retarget_all" in context.user_data:
         context.user_data.pop("retarget_all")
         users = get_users()
@@ -188,20 +227,21 @@ async def forward_any(update, context, users):
 # ================= APP =================
 app = ApplicationBuilder().token(TOKEN).build()
 
+app.post_init = remove_menu  # 🔥 MENU HIDDEN HERE
+
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("add", add_command))
+app.add_handler(CommandHandler("sawa", sawa))
+app.add_handler(CommandHandler("aidi", aidi))
 app.add_handler(CommandHandler("retarget", retarget_user))
 app.add_handler(CommandHandler("retarget_all", retarget_all))
+
 app.add_handler(MessageHandler(filters.COMMAND, command_router))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, normal_message))
-
-# 🔥 ADMIN MEDIA HANDLER
-app.add_handler(
-    MessageHandler(
-        filters.PHOTO | filters.VIDEO | filters.TEXT,
-        admin_media_handler
-    )
-)
+app.add_handler(MessageHandler(
+    filters.PHOTO | filters.VIDEO | filters.ATTACHMENT | filters.AUDIO | filters.VOICE,
+    user_media_handler
+))
 
 print("🤖 Bot running...")
 app.run_polling()

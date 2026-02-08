@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -14,10 +15,16 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-app = FastAPI()
-
 # Initialize bot application
 bot_app = Application.builder().token(TOKEN).build()
+
+@asynccontextmanager
+async def lifespan(app):
+    await bot_app.initialize()
+    yield
+    await bot_app.shutdown()
+
+app = FastAPI(lifespan=lifespan)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
