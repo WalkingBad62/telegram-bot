@@ -10,6 +10,7 @@ import os
 import re
 import requests
 from dotenv import load_dotenv
+import secrets
 
 load_dotenv()
 
@@ -47,7 +48,25 @@ init_db()
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"))
+
+def env_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "y", "on")
+
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "supersecret")
+SESSION_HTTPS_ONLY = env_bool("SESSION_HTTPS_ONLY", False)
+SESSION_SAMESITE = os.getenv("SESSION_SAMESITE", "lax")
+SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", str(60 * 60 * 24 * 7)))
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET_KEY,
+    https_only=SESSION_HTTPS_ONLY,
+    same_site=SESSION_SAMESITE,
+    max_age=SESSION_MAX_AGE,
+)
 
 # --- Auth Helpers ---
 def is_logged_in(request: Request):
@@ -56,6 +75,20 @@ def is_logged_in(request: Request):
 def require_login(request: Request):
     if not is_logged_in(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+def get_csrf_token(request: Request) -> str:
+    token = request.session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session["csrf_token"] = token
+    return token
+
+def require_csrf(request: Request):
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        expected = request.session.get("csrf_token")
+        provided = request.headers.get("x-csrf-token", "")
+        if not expected or not provided or provided != expected:
+            raise HTTPException(status_code=403, detail="CSRF token invalid")
 
 # --- Root endpoint for health check ---
 @app.get("/")
@@ -124,6 +157,8 @@ async def send_all_bulk(
     images: List[UploadFile] = File([]),
     videos: List[UploadFile] = File([])
 ):
+    require_login(request)
+    require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     # user_ids is a comma-separated string from the form
@@ -173,7 +208,8 @@ async def send_all_bulk(
 
 # --- Get all replies (public for bot) ---
 @app.get("/replies")
-def get_replies():
+def get_replies(request: Request):
+    require_login(request)
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
         c.execute("SELECT id, question, reply, active FROM replies")
@@ -186,6 +222,7 @@ def get_replies():
 @app.post("/replies")
 async def add_reply(request: Request):
     require_login(request)
+    require_csrf(request)
     data = await request.json()
     question = data.get("question", "").strip()
     reply = data.get("reply", "").strip()
@@ -202,6 +239,7 @@ async def add_reply(request: Request):
 @app.put("/replies/{reply_id}")
 async def edit_reply(reply_id: int, request: Request):
     require_login(request)
+    require_csrf(request)
     data = await request.json()
     question = data.get("question", "").strip()
     reply = data.get("reply", "").strip()
@@ -216,6 +254,7 @@ async def edit_reply(reply_id: int, request: Request):
 @app.delete("/replies/{reply_id}")
 def delete_reply(reply_id: int, request: Request):
     require_login(request)
+    require_csrf(request)
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
         c.execute("DELETE FROM replies WHERE id=?", (reply_id,))
@@ -227,9 +266,11 @@ def delete_reply(reply_id: int, request: Request):
 def login_page(request: Request):
     if is_logged_in(request):
         return RedirectResponse("/admin", status_code=302)
+    csrf_token = get_csrf_token(request)
     return HTMLResponse("""
         <h2>Admin Login</h2>
         <form method='post' action='/admin/login'>
+            <input type='hidden' name='csrf_token' value='""" + csrf_token + """'>
             <input name='username' placeholder='Username' required><br>
             <input name='password' type='password' placeholder='Password' required><br>
             <button type='submit'>Login</button>
@@ -240,6 +281,9 @@ def login_page(request: Request):
 @app.post("/admin/login")
 async def login(request: Request):
     form = await request.form()
+    csrf_token = form.get("csrf_token")
+    if not csrf_token or csrf_token != request.session.get("csrf_token"):
+        return HTMLResponse("<h2>Invalid session</h2><a href='/admin/login'>Try again</a>", status_code=403)
     username = form.get("username")
     password = form.get("password")
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
@@ -256,6 +300,8 @@ def logout(request: Request):
 # --- Send message to all or selected users ---
 @app.post("/send/message/bulk")
 async def send_message_bulk(request: Request):
+    require_login(request)
+    require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     data = await request.json()
@@ -285,7 +331,8 @@ async def send_message_bulk(request: Request):
 
 # --- Retarget old users ---
 @app.get("/retarget/users")
-def retarget_users():
+def retarget_users(request: Request):
+    require_login(request)
     limit_time = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
 
     with sqlite3.connect(DB_NAME) as conn:
@@ -300,7 +347,8 @@ def retarget_users():
 
 # --- Get all users with last seen ---
 @app.get("/users")
-def get_all_users():
+def get_all_users(request: Request):
+    require_login(request)
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
         c.execute("SELECT telegram_id, username, last_message_time FROM users")
@@ -313,7 +361,9 @@ def get_all_users():
 
 # --- Send image to multiple users ---
 @app.post("/send/image/bulk")
-async def send_image_bulk(user_ids: str = Form(...), file: UploadFile = File(...)):
+async def send_image_bulk(request: Request, user_ids: str = Form(...), file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     try:
@@ -344,7 +394,9 @@ async def send_image_bulk(user_ids: str = Form(...), file: UploadFile = File(...
 
 # --- Send video to multiple users ---
 @app.post("/send/video/bulk")
-async def send_video_bulk(user_ids: str = Form(...), file: UploadFile = File(...)):
+async def send_video_bulk(request: Request, user_ids: str = Form(...), file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     try:
@@ -365,7 +417,9 @@ async def send_video_bulk(user_ids: str = Form(...), file: UploadFile = File(...
         return {"error": str(e)}
 # --- Send text message to user ---
 @app.post("/send/message")
-async def send_message(user_id: int = Form(...), message: str = Form(...)):
+async def send_message(request: Request, user_id: int = Form(...), message: str = Form(...)):
+    require_login(request)
+    require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     try:
@@ -382,7 +436,8 @@ async def send_message(user_id: int = Form(...), message: str = Form(...)):
 @app.get("/admin")
 def get_admin_panel(request: Request):
     require_login(request)
-    return templates.TemplateResponse("admin_panel.html", {"request": request})
+    csrf_token = get_csrf_token(request)
+    return templates.TemplateResponse("admin_panel.html", {"request": request, "csrf_token": csrf_token})
 
 
 # local host web

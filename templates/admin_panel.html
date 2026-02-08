@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Totem Bot Admin Panel</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -77,6 +78,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // ...existing JavaScript from admin_panel.html...
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
         async function loadReplies() {
             const res = await fetch('/replies');
             if (res.status === 401) {
@@ -112,7 +115,7 @@
                 saveBtn.onclick = async () => {
                     await fetch(`/replies/${r.id}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                         body: JSON.stringify({
                             question: inputQ.value,
                             reply: inputR.value,
@@ -125,7 +128,7 @@
                 const delBtn = document.createElement('button');
                 delBtn.textContent = 'Delete';
                 delBtn.onclick = async () => {
-                    await fetch(`/replies/${r.id}`, { method: 'DELETE' });
+                    await fetch(`/replies/${r.id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken } });
                     loadReplies();
                 };
                 tdAct.appendChild(delBtn);
@@ -139,7 +142,7 @@
             const reply = document.getElementById('replyInput').value;
             await fetch('/replies', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                 body: JSON.stringify({ question, reply })
             });
             document.getElementById('questionInput').value = '';
@@ -173,7 +176,15 @@
                 tbody.innerHTML = '';
                 data.users.forEach(u => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || ''}</td><td>${u.last_message_time || ''}</td>`;
+                    const tdId = document.createElement('td');
+                    tdId.textContent = u.telegram_id;
+                    const tdUser = document.createElement('td');
+                    tdUser.textContent = u.username || '';
+                    const tdLast = document.createElement('td');
+                    tdLast.textContent = u.last_message_time || '';
+                    tr.appendChild(tdId);
+                    tr.appendChild(tdUser);
+                    tr.appendChild(tdLast);
                     tbody.appendChild(tr);
                 });
             } catch (e) {
@@ -211,10 +222,10 @@
             for (let i = 0; i < videoFiles.length; i++) {
                 formData.append('videos', videoFiles[i]);
             }
-            const res = await fetch('/send/all/bulk', { method: 'POST', body: formData });
+            const res = await fetch('/send/all/bulk', { method: 'POST', headers: { 'X-CSRF-Token': csrfToken }, body: formData });
             let result = await res.json();
             if (result.success) {
-                document.getElementById('result').innerText = `✅ Sent to ${result.sent.length} user(s).`;
+                document.getElementById('result').innerText = ` Sent to ${result.sent.length} user(s).`;
             } else if (result.failed && result.failed.length > 0) {
                 document.getElementById('result').innerText = `Some failed: ${JSON.stringify(result.failed)}`;
             } else {
