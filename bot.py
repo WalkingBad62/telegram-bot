@@ -28,11 +28,18 @@ AWAIT_IMAGEAI_KEY = "await_imageai"
 AWAIT_CURRENCY_KEY = "await_currency_pair"
 
 CURRENCY_PAIRS = {
-    "EURUSD": {"price": "1.19", "link": "http://currency.com/buy/EURUSD/"},
-    "USDJPY": {"price": "N/A", "link": "http://currency.com/buy/USDJPY/"},
-    "AUDCAD": {"price": "N/A", "link": "http://currency.com/buy/AUDCAD/"},
-    "CHFUSD": {"price": "N/A", "link": "http://currency.com/buy/CHFUSD/"},
-    "BTCUSD": {"price": "N/A", "link": "http://currency.com/buy/BTCUSD/"},
+    "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
+    "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
+    "AUDCAD": {"price": 0.91, "link": "http://currency.com/buy/AUDCAD/"},
+    "CHFUSD": {"price": 1.12, "link": "http://currency.com/buy/CHFUSD/"},
+    "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
+}
+CURRENCY_PAIR_CHOICES = {
+    "1": "EURUSD",
+    "2": "USDJPY",
+    "3": "AUDCAD",
+    "4": "CHFUSD",
+    "5": "BTCUSD",
 }
 
 DEFAULT_START_MESSAGE = (
@@ -53,6 +60,34 @@ def fetch_start_message():
     except Exception:
         pass
     return DEFAULT_START_MESSAGE
+
+def fetch_currency_pair(pair: str):
+    try:
+        res = requests.get(f"{BACKEND_URL}/currency/pair/{pair}", timeout=5)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        pass
+    return None
+
+def format_money(value):
+    try:
+        val = float(value)
+        if val.is_integer():
+            return str(int(val))
+        return f"{val:.2f}"
+    except Exception:
+        return str(value)
+
+def fetch_imageai_price(file_bytes, filename):
+    try:
+        files = {"file": (filename, file_bytes)}
+        res = requests.post(f"{BACKEND_URL}/imageai/price", files=files, timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        pass
+    return None
 
 # ================= REMOVE MENU =================
 async def remove_menu(app):
@@ -117,13 +152,19 @@ async def normal_message(update, context):
             return
 
     if context.user_data.get(AWAIT_CURRENCY_KEY):
-        pair = (update.message.text or "").strip().upper()
+        raw = (update.message.text or "").strip().upper()
+        pair = CURRENCY_PAIR_CHOICES.get(raw, raw)
         if pair in CURRENCY_PAIRS:
             context.user_data.pop(AWAIT_CURRENCY_KEY, None)
-            info = CURRENCY_PAIRS[pair]
+            data = fetch_currency_pair(pair) or {
+                "price": CURRENCY_PAIRS[pair]["price"],
+                "link": CURRENCY_PAIRS[pair]["link"],
+            }
+            price = format_money(data.get("price", ""))
+            link = data.get("link", CURRENCY_PAIRS[pair]["link"])
             await update.message.reply_text(
-                f"Price: {info['price']}\n"
-                f"link: {info['link']}"
+                f"Price: {price}\n"
+                f"link: {link}"
             )
         else:
             await update.message.reply_text(
@@ -161,11 +202,24 @@ async def user_media_handler(update, context):
     if context.user_data.get(AWAIT_IMAGEAI_KEY):
         if update.message.photo:
             context.user_data.pop(AWAIT_IMAGEAI_KEY, None)
-            await update.message.reply_text(
-                "Currency: USD\n"
-                "Price: $90\n"
-                "Discount: $10"
-            )
+            try:
+                photo = update.message.photo[-1]
+                tg_file = await photo.get_file()
+                file_bytes = await tg_file.download_as_bytearray()
+                data = fetch_imageai_price(bytes(file_bytes), f"{photo.file_unique_id}.jpg")
+                if data:
+                    currency = data.get("currency", "USD")
+                    price = format_money(data.get("price", ""))
+                    discount = format_money(data.get("discount", ""))
+                    await update.message.reply_text(
+                        f"Currency: {currency}\n"
+                        f"Price: ${price}\n"
+                        f"Discount: ${discount}"
+                    )
+                else:
+                    await update.message.reply_text("Image processed, but price not available.")
+            except Exception:
+                await update.message.reply_text("Image processed, but price not available.")
         else:
             await update.message.reply_text("Please upload an image.")
         return

@@ -30,6 +30,13 @@ DEFAULT_START_MESSAGE = (
     "1. ImageAI: /imageai\n"
     "2. Convert Currency: /currencycoveter"
 )
+DEFAULT_CURRENCY_PAIRS = {
+    "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
+    "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
+    "AUDCAD": {"price": 0.91, "link": "http://currency.com/buy/AUDCAD/"},
+    "CHFUSD": {"price": 1.12, "link": "http://currency.com/buy/CHFUSD/"},
+    "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
+}
 
 # --- Ensure tables exist ---
 def init_db():
@@ -65,10 +72,34 @@ def init_db():
                 value TEXT NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS image_prices (
+                image_hash TEXT PRIMARY KEY,
+                currency TEXT NOT NULL,
+                price REAL NOT NULL,
+                discount REAL NOT NULL,
+                created_at TEXT
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS currency_pairs (
+                pair TEXT PRIMARY KEY,
+                price REAL NOT NULL,
+                link TEXT NOT NULL,
+                updated_at TEXT
+            )
+        ''')
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("start_message", DEFAULT_START_MESSAGE)
         )
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for pair, info in DEFAULT_CURRENCY_PAIRS.items():
+            c.execute(
+                "INSERT OR IGNORE INTO currency_pairs (pair, price, link, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (pair, info["price"], info["link"], now)
+            )
         conn.commit()
 
 init_db()
@@ -89,6 +120,61 @@ def set_setting(key: str, value: str) -> None:
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value)
+        )
+        conn.commit()
+
+def get_image_price(image_hash: str):
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT currency, price, discount FROM image_prices WHERE image_hash=?",
+            (image_hash,)
+        )
+        return c.fetchone()
+
+def save_image_price(image_hash: str, currency: str, price: float, discount: float):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO image_prices (image_hash, currency, price, discount, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (image_hash, currency, price, discount, now)
+        )
+        conn.commit()
+
+def generate_price_from_hash(image_hash: str):
+    base = int(image_hash[:8], 16)
+    price = 50 + (base % 151)  # 50 - 200
+    discount = 5 + (base % 31)  # 5 - 35
+    if discount >= price:
+        discount = max(0, price - 1)
+    return float(price), float(discount)
+
+def get_currency_pair(pair: str):
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT price, link FROM currency_pairs WHERE pair=?",
+            (pair,)
+        )
+        return c.fetchone()
+
+def get_all_currency_pairs():
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT pair, price, link, updated_at FROM currency_pairs ORDER BY pair")
+        return c.fetchall()
+
+def upsert_currency_pair(pair: str, price: float, link: str):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO currency_pairs (pair, price, link, updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(pair) DO UPDATE SET price=excluded.price, link=excluded.link, updated_at=excluded.updated_at",
+            (pair, price, link, now)
         )
         conn.commit()
 
@@ -206,6 +292,73 @@ async def update_start_message(request: Request):
         raise HTTPException(status_code=400, detail="Message is required.")
     set_setting("start_message", raw_message)
     return {"ok": True, "message": raw_message}
+
+# --- Currency price endpoint ---
+@app.get("/currency/pair/{pair}")
+def currency_pair(pair: str):
+    pair_norm = (pair or "").strip().upper()
+    row = get_currency_pair(pair_norm)
+    if not row:
+        raise HTTPException(status_code=404, detail="Pair not found.")
+    price, link = row
+    return {"pair": pair_norm, "price": price, "link": link}
+
+@app.get("/currency/pairs")
+def currency_pairs(request: Request):
+    require_login(request)
+    rows = get_all_currency_pairs()
+    return {
+        "pairs": [
+            {
+                "pair": row[0],
+                "price": row[1],
+                "link": row[2],
+                "updated_at": row[3],
+            }
+            for row in rows
+        ]
+    }
+
+@app.put("/currency/pairs/{pair}")
+async def update_currency_pair(pair: str, request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    raw_price = data.get("price")
+    raw_link = (data.get("link") or "").strip()
+    pair_norm = (pair or "").strip().upper()
+    if not pair_norm:
+        raise HTTPException(status_code=400, detail="Pair is required.")
+    if raw_price is None:
+        raise HTTPException(status_code=400, detail="Price is required.")
+    try:
+        price = float(raw_price)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Price must be a number.")
+    if not raw_link:
+        raise HTTPException(status_code=400, detail="Link is required.")
+    upsert_currency_pair(pair_norm, price, raw_link)
+    return {"ok": True, "pair": pair_norm, "price": price, "link": raw_link}
+
+# --- ImageAI price endpoint ---
+@app.post("/imageai/price")
+async def imageai_price(file: UploadFile = File(...)):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file.")
+    image_hash = hashlib.sha256(content).hexdigest()
+    row = get_image_price(image_hash)
+    if row:
+        currency, price, discount = row
+    else:
+        currency = "USD"
+        price, discount = generate_price_from_hash(image_hash)
+        save_image_price(image_hash, currency, price, discount)
+    return {
+        "currency": currency,
+        "price": price,
+        "discount": discount
+    }
 
 # --- Store user (used by bot) ---
 @app.post("/user/store")
