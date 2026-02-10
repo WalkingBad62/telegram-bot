@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import secrets
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=True)
 
 # --- Configuration ---
 DB_NAME = os.getenv("DATABASE_URL", "bot_users.db")
@@ -22,7 +22,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN", "
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-ADMIN_RESET_TOKEN = os.getenv("ADMIN_RESET_TOKEN", "")
+ADMIN_RESET_TOKEN = (os.getenv("ADMIN_RESET_TOKEN", "") or "").strip()
 
 # --- Ensure tables exist ---
 def init_db():
