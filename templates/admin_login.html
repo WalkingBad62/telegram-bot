@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Totem Bot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #f7f3ee;
+            --bg-2: #eef3f7;
+            --ink: #111827;
+            --muted: #4b5563;
+            --card: #ffffff;
+            --accent: #0f766e;
+            --accent-2: #2563eb;
+            --warm: #f59e0b;
+            --border: rgba(15, 23, 42, 0.12);
+            --shadow: 0 30px 80px rgba(15, 23, 42, 0.18);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 28px;
+            font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(800px 380px at 12% 8%, rgba(15, 118, 110, 0.15), transparent 60%),
+                radial-gradient(900px 420px at 88% 12%, rgba(37, 99, 235, 0.15), transparent 60%),
+                linear-gradient(140deg, var(--bg-1), var(--bg-2));
+        }
+        .glow {
+            position: fixed;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            filter: blur(50px);
+            opacity: 0.35;
+            z-index: 0;
+            animation: drift 12s ease-in-out infinite;
+        }
+        .glow.glow-1 {
+            background: rgba(15, 118, 110, 0.6);
+            top: 10%;
+            left: 8%;
+        }
+        .glow.glow-2 {
+            background: rgba(37, 99, 235, 0.6);
+            bottom: 8%;
+            right: 10%;
+            animation-delay: -4s;
+        }
+        @keyframes drift {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-18px); }
+        }
+        .login-shell {
+            width: min(980px, 100%);
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+            border-radius: 24px;
+            overflow: hidden;
+            background: var(--card);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            position: relative;
+            z-index: 1;
+            animation: rise 600ms ease;
+        }
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .brand-panel {
+            padding: 40px 44px;
+            background:
+                linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(37, 99, 235, 0.1)),
+                url("data:image/svg+xml,%3Csvg width='180' height='180' viewBox='0 0 180 180' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='90' cy='90' r='88' stroke='%23e5e7eb' stroke-width='1'/%3E%3Ccircle cx='90' cy='90' r='58' stroke='%23e5e7eb' stroke-width='1'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 24px bottom 24px;
+        }
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 13px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+        .brand-panel h1 {
+            font-family: "Fraunces", "Times New Roman", serif;
+            font-size: clamp(28px, 3vw, 40px);
+            margin: 18px 0 12px;
+            letter-spacing: -0.3px;
+        }
+        .brand-panel p {
+            margin: 0 0 22px;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 26px;
+            display: grid;
+            gap: 12px;
+        }
+        .feature-list li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .feature-list li::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            flex-shrink: 0;
+        }
+        .brand-foot {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .chip {
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.14);
+            color: #b45309;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .meta {
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .form-panel {
+            padding: 44px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 20px;
+        }
+        .form-head .eyebrow {
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: var(--accent-2);
+            font-weight: 600;
+        }
+        .form-head h2 {
+            margin: 10px 0 8px;
+            font-size: 28px;
+        }
+        .form-head p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        .alert {
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(239, 68, 68, 0.12);
+            color: #b91c1c;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .login-form {
+            display: grid;
+            gap: 16px;
+        }
+        .field {
+            display: grid;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            color: #1f2937;
+        }
+        .field input {
+            height: 46px;
+            border-radius: 12px;
+            border: 1px solid rgba(15, 23, 42, 0.16);
+            padding: 0 14px;
+            font-size: 14px;
+            transition: border-color 120ms ease, box-shadow 120ms ease;
+        }
+        .field input:focus {
+            outline: none;
+            border-color: rgba(15, 118, 110, 0.6);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+        }
+        .primary-btn {
+            height: 46px;
+            border-radius: 12px;
+            border: none;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            box-shadow: 0 12px 24px rgba(15, 118, 110, 0.2);
+            transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+        .primary-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 30px rgba(37, 99, 235, 0.2);
+        }
+        @media (max-width: 900px) {
+            .login-shell {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .brand-panel {
+                padding: 36px;
+            }
+            .form-panel {
+                padding: 36px;
+            }
+        }
+        @media (max-width: 600px) {
+            body { padding: 18px; }
+            .brand-panel { padding: 28px 24px; }
+            .form-panel { padding: 28px 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <main class="login-shell">
+        <section class="brand-panel">
+            <div class="brand-badge">Totem Bot</div>
+            <h1>Admin Control Room</h1>
+            <p>Secure sign-in to manage broadcasts, replies, and live user updates with confidence.</p>
+            <ul class="feature-list">
+                <li>Broadcast updates in minutes.</li>
+                <li>Manage common replies with clarity.</li>
+                <li>Track user activity in one view.</li>
+            </ul>
+            <div class="brand-foot">
+                <div class="chip">Protected Area</div>
+                <div class="meta">Admin access only</div>
+            </div>
+        </section>
+        <section class="form-panel">
+            <div class="form-head">
+                <div class="eyebrow">Admin Login</div>
+                <h2>Welcome back</h2>
+                <p>Enter your credentials to continue.</p>
+            </div>
+            {% if error %}
+            <div class="alert">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/admin/login" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label class="field">
+                    <span>Username</span>
+                    <input name="username" placeholder="Enter admin username" required autocomplete="username">
+                </label>
+                <label class="field">
+                    <span>Password</span>
+                    <input name="password" type="password" placeholder="Enter your password" required autocomplete="current-password">
+                </label>
+                <button type="submit" class="primary-btn">Sign In</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

@@ -2,77 +2,283 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Totem Bot Admin Panel</title>
     <meta name="csrf-token" content="{{ csrf_token }}">
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { margin: 40px; }
-        .form-section { max-width: 500px; margin-bottom: 30px; }
-        .table-section { max-width: 900px; }
+        :root {
+            --bg-1: #f6f4f1;
+            --bg-2: #eef3fb;
+            --ink: #1c1b1a;
+            --muted: #5b5b62;
+            --card: #ffffff;
+            --accent: #2563eb;
+            --accent-2: #10b981;
+            --accent-3: #f59e0b;
+            --border: rgba(17, 24, 39, 0.12);
+            --shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: var(--ink);
+            margin: 0;
+            background:
+                radial-gradient(900px 400px at 10% -10%, rgba(37, 99, 235, 0.12), transparent 60%),
+                radial-gradient(800px 360px at 90% 10%, rgba(16, 185, 129, 0.12), transparent 60%),
+                linear-gradient(140deg, var(--bg-1), var(--bg-2));
+            min-height: 100vh;
+        }
+        .page-shell {
+            padding: 48px 20px 72px;
+        }
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 26px;
+        }
+        .page-title {
+            font-family: "Fraunces", "Times New Roman", serif;
+            font-weight: 700;
+            font-size: clamp(28px, 3.2vw, 44px);
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .page-subtitle {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 15px;
+        }
+        .btn-ghost {
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.8);
+            color: var(--ink);
+            padding: 10px 18px;
+            border-radius: 999px;
+            font-weight: 600;
+            transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+        .btn-ghost:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 24px;
+        }
+        @media (min-width: 992px) {
+            .grid {
+                grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+                align-items: start;
+            }
+        }
+        .panel-card {
+            background: var(--card);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            padding: 24px;
+        }
+        .panel-title {
+            font-weight: 700;
+            font-size: 20px;
+            margin-bottom: 14px;
+        }
+        .panel-title span {
+            color: var(--accent);
+        }
+        .form-section { max-width: none; }
+        .table-section { max-width: none; }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.1);
+            color: #1e40af;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .form-control, .form-select {
+            border-radius: 12px;
+            border-color: rgba(17, 24, 39, 0.16);
+            padding: 10px 12px;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: rgba(37, 99, 235, 0.6);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            border: none;
+            border-radius: 12px;
+            padding: 10px 18px;
+            font-weight: 600;
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #10b981, #22c55e);
+            border: none;
+            border-radius: 12px;
+            padding: 10px 18px;
+            font-weight: 600;
+        }
+        #result {
+            font-weight: 600;
+            color: #1e40af;
+        }
+        #authError {
+            font-weight: 600;
+        }
+        .table {
+            margin-bottom: 0;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        .table thead {
+            background: #f8fafc;
+            color: #475569;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        #replyTable input {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            padding: 6px 10px;
+        }
+        #replyTable button {
+            border-radius: 10px;
+            font-weight: 600;
+            padding: 6px 12px;
+            border: none;
+        }
+        #replyTable button.btn-save {
+            background: rgba(37, 99, 235, 0.14);
+            color: #1d4ed8;
+            margin-right: 6px;
+        }
+        #replyTable button.btn-delete {
+            background: rgba(239, 68, 68, 0.12);
+            color: #dc2626;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .section-header h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .muted {
+            color: var(--muted);
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
+    <div class="page-shell">
     <div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="mb-0">Totem Bot Admin Panel</h1>
-            <button id="logoutBtn" class="btn btn-danger">Logout</button>
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Totem Bot Admin Panel</h1>
+                <p class="page-subtitle">Broadcast updates, manage replies, and monitor users in one place.</p>
+            </div>
+            <button id="logoutBtn" class="btn-ghost">Logout</button>
         </div>
-        <form id="unifiedForm" enctype="multipart/form-data" class="form-section card p-4 shadow-sm">
-            <h2 class="mb-3">Send Message, Images, and Videos</h2>
-            <div class="mb-3">
-                <label class="form-label">Select Users:</label>
-                <select id="unifiedUserSelect" name="user_ids" multiple class="form-select" style="height:100px;"></select>
+        <div class="grid">
+            <div class="panel-card">
+                <div class="section-header">
+                    <div>
+                        <h2>Broadcast Center</h2>
+                        <div class="muted">Send messages, images, and videos to your audience.</div>
+                    </div>
+                    <div class="tag">Multi-send</div>
+                </div>
+                <form id="unifiedForm" enctype="multipart/form-data" class="form-section">
+                    <div class="mb-3">
+                        <label class="form-label">Select Users:</label>
+                        <select id="unifiedUserSelect" name="user_ids" multiple class="form-select" style="height:120px;"></select>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="unifiedAllUsers">
+                        <label class="form-check-label" for="unifiedAllUsers">Send to All Users</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message:</label>
+                        <textarea id="unifiedMessage" name="message" class="form-control" rows="5" style="min-height:140px;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Images:</label>
+                        <input type="file" id="unifiedImageFile" name="images" accept="image/*" class="form-control" multiple>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Videos:</label>
+                        <input type="file" id="unifiedVideoFile" name="videos" accept="video/*" class="form-control" multiple>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Broadcast</button>
+                </form>
+                <div id="result" class="mt-3"></div>
+                <div id="authError" class="text-danger mt-2"></div>
             </div>
-            <div class="form-check mb-3">
-                <input class="form-check-input" type="checkbox" id="unifiedAllUsers">
-                <label class="form-check-label" for="unifiedAllUsers">Send to All Users</label>
+            <div class="panel-card">
+                <div class="section-header">
+                    <div>
+                        <h2>Reply Manager</h2>
+                        <div class="muted">Maintain common questions and automated replies.</div>
+                    </div>
+                    <div class="tag" style="background: rgba(16, 185, 129, 0.12); color: #047857;">Knowledge Base</div>
+                </div>
+                <form id="addReplyForm" class="row g-2 align-items-center mb-4">
+                    <div class="col-12 col-lg">
+                        <input type="text" id="questionInput" placeholder="Common question" required class="form-control">
+                    </div>
+                    <div class="col-12 col-lg">
+                        <input type="text" id="replyInput" placeholder="Bot reply" required class="form-control">
+                    </div>
+                    <div class="col-12 col-lg-auto">
+                        <button type="submit" class="btn btn-success w-100">Add Reply</button>
+                    </div>
+                </form>
+                <div class="table-section">
+                    <table id="replyTable" class="table table-bordered table-striped align-middle">
+                        <thead>
+                            <tr><th>Question</th><th>Reply</th><th>Active</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Message:</label>
-                <textarea id="unifiedMessage" name="message" class="form-control" rows="5" style="min-height:120px;"></textarea>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Images:</label>
-                <input type="file" id="unifiedImageFile" name="images" accept="image/*" class="form-control" multiple>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Videos:</label>
-                <input type="file" id="unifiedVideoFile" name="videos" accept="video/*" class="form-control" multiple>
-            </div>
-            <button type="submit" class="btn btn-primary">Send</button>
-        </form>
-        <div id="result" class="mt-3"></div>
-        <div id="authError" class="text-danger mt-2"></div>
-        <h2 class="mt-5">Conversation/Reply Management</h2>
-        <form id="addReplyForm" class="row g-2 align-items-center mb-3">
-            <div class="col-auto">
-                <input type="text" id="questionInput" placeholder="Common question" required class="form-control">
-            </div>
-            <div class="col-auto">
-                <input type="text" id="replyInput" placeholder="Bot reply" required class="form-control">
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-success">Add Reply</button>
-            </div>
-        </form>
-        <div class="table-section">
-            <table id="replyTable" class="table table-bordered table-striped align-middle">
-                <thead class="table-light">
-                    <tr><th>Question</th><th>Reply</th><th>Active</th><th>Actions</th></tr>
-                </thead>
-                <tbody></tbody>
-            </table>
         </div>
-        <h2 class="mt-5">User Overview</h2>
-        <div class="table-section">
-            <table id="userTable" class="table table-bordered table-striped align-middle">
-                <thead class="table-light">
-                    <tr><th>Telegram ID</th><th>Username</th><th>Last Seen</th></tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
+                    <h2>User Overview</h2>
+                    <div class="muted">Monitor active users and last seen times.</div>
+                </div>
+                <div class="tag" style="background: rgba(245, 158, 11, 0.12); color: #b45309;">Live</div>
+            </div>
+            <div class="table-section">
+                <table id="userTable" class="table table-bordered table-striped align-middle">
+                    <thead>
+                        <tr><th>Telegram ID</th><th>Username</th><th>Last Seen</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
+    </div>
     </div>
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -96,11 +302,13 @@
                 const tdQ = document.createElement('td');
                 const inputQ = document.createElement('input');
                 inputQ.value = r.question;
+                inputQ.className = 'form-control';
                 tdQ.appendChild(inputQ);
                 tr.appendChild(tdQ);
                 const tdR = document.createElement('td');
                 const inputR = document.createElement('input');
                 inputR.value = r.reply;
+                inputR.className = 'form-control';
                 tdR.appendChild(inputR);
                 tr.appendChild(tdR);
                 const tdA = document.createElement('td');
@@ -112,6 +320,7 @@
                 const tdAct = document.createElement('td');
                 const saveBtn = document.createElement('button');
                 saveBtn.textContent = 'Save';
+                saveBtn.className = 'btn-save';
                 saveBtn.onclick = async () => {
                     await fetch(`/replies/${r.id}`, {
                         method: 'PUT',
@@ -127,6 +336,7 @@
                 tdAct.appendChild(saveBtn);
                 const delBtn = document.createElement('button');
                 delBtn.textContent = 'Delete';
+                delBtn.className = 'btn-delete';
                 delBtn.onclick = async () => {
                     await fetch(`/replies/${r.id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken } });
                     loadReplies();

@@ -267,15 +267,14 @@ def login_page(request: Request):
     if is_logged_in(request):
         return RedirectResponse("/admin", status_code=302)
     csrf_token = get_csrf_token(request)
-    return HTMLResponse("""
-        <h2>Admin Login</h2>
-        <form method='post' action='/admin/login'>
-            <input type='hidden' name='csrf_token' value='""" + csrf_token + """'>
-            <input name='username' placeholder='Username' required><br>
-            <input name='password' type='password' placeholder='Password' required><br>
-            <button type='submit'>Login</button>
-        </form>
-    """)
+    return templates.TemplateResponse(
+        "admin_login.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "error": None,
+        },
+    )
 
 # --- Login Handler (POST) ---
 @app.post("/admin/login")
@@ -283,13 +282,31 @@ async def login(request: Request):
     form = await request.form()
     csrf_token = form.get("csrf_token")
     if not csrf_token or csrf_token != request.session.get("csrf_token"):
-        return HTMLResponse("<h2>Invalid session</h2><a href='/admin/login'>Try again</a>", status_code=403)
+        new_token = get_csrf_token(request)
+        return templates.TemplateResponse(
+            "admin_login.html",
+            {
+                "request": request,
+                "csrf_token": new_token,
+                "error": "Invalid session. Please try again.",
+            },
+            status_code=403,
+        )
     username = form.get("username")
     password = form.get("password")
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         request.session["logged_in"] = True
         return RedirectResponse("/admin", status_code=302)
-    return HTMLResponse("<h2>Login failed</h2><a href='/admin/login'>Try again</a>", status_code=401)
+    new_token = get_csrf_token(request)
+    return templates.TemplateResponse(
+        "admin_login.html",
+        {
+            "request": request,
+            "csrf_token": new_token,
+            "error": "Login failed. Please check your username and password.",
+        },
+        status_code=401,
+    )
 
 # --- Logout ---
 @app.get("/admin/logout")
