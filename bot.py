@@ -76,24 +76,21 @@ async def normal_message(update, context):
             await admin_media_handler(update, context)
             return
 
-    import re
-    def normalize(text):
-        return re.sub(r'[^a-z0-9 ]', '', text.strip().lower())
-
-    user_text = normalize(update.message.text)
-
     try:
-        res = requests.get(f"{BACKEND_URL}/replies")
+        res = requests.post(
+            f"{BACKEND_URL}/reply/get",
+            json={"text": update.message.text},
+            timeout=5
+        )
         if res.status_code == 200:
-            replies = res.json().get("replies", [])
-            for r in replies:
-                if r["active"] and normalize(r["question"]) == user_text:
-                    await update.message.reply_text(r["reply"])
-                    return
+            reply = res.json().get("reply")
+            if reply:
+                await update.message.reply_text(reply)
+                return
     except:
         pass
 
-    await update.message.reply_text("কোনো reply পাওয়া যায়নি।")
+    await update.message.reply_text("???? reply ?????? ???????")
 
 # ================= USER MEDIA HANDLER =================
 async def user_media_handler(update, context):

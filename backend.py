@@ -126,7 +126,10 @@ async def reply_get(request: Request):
 
     # Check database replies first
     def normalize(t):
-        return re.sub(r'[^a-z0-9 ]', '', t.strip().lower())
+        cleaned = t.strip().lower()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = re.sub(r"[^\w\s]", "", cleaned, flags=re.UNICODE)
+        return cleaned
 
     user_text = normalize(text)
     try:
