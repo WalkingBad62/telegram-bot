@@ -256,6 +256,19 @@
             color: #1f2937;
             word-break: break-word;
         }
+        .link-button {
+            background: none;
+            border: none;
+            color: #2563eb;
+            font-weight: 600;
+            padding: 6px 0 0;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .link-button:hover {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
         .section-header {
             display: flex;
             align-items: center;
@@ -386,6 +399,7 @@
                             <div id="confirmDeleteReply" class="detail-value"></div>
                         </div>
                     </div>
+                    <button type="button" id="toggleDeletePreview" class="link-button">View full</button>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -401,9 +415,38 @@
         const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
         let pendingDeleteId = null;
         let pendingDeleteRow = null;
+        let isPreviewExpanded = false;
         const deleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
         const confirmDeleteQuestion = document.getElementById('confirmDeleteQuestion');
         const confirmDeleteReply = document.getElementById('confirmDeleteReply');
+        const toggleDeletePreview = document.getElementById('toggleDeletePreview');
+        const PREVIEW_LIMIT = 140;
+
+        function truncateText(text, limit) {
+            if (!text) return "";
+            const clean = text.trim();
+            if (clean.length <= limit) return clean;
+            return `${clean.slice(0, limit).trim()}...`;
+        }
+
+        function applyPreview() {
+            const qFull = confirmDeleteQuestion.dataset.fullText || "";
+            const rFull = confirmDeleteReply.dataset.fullText || "";
+            if (isPreviewExpanded) {
+                confirmDeleteQuestion.textContent = qFull || "—";
+                confirmDeleteReply.textContent = rFull || "—";
+                toggleDeletePreview.textContent = "Collapse";
+            } else {
+                confirmDeleteQuestion.textContent = truncateText(qFull, PREVIEW_LIMIT) || "—";
+                confirmDeleteReply.textContent = truncateText(rFull, PREVIEW_LIMIT) || "—";
+                toggleDeletePreview.textContent = "View full";
+            }
+        }
+
+        toggleDeletePreview.onclick = function() {
+            isPreviewExpanded = !isPreviewExpanded;
+            applyPreview();
+        };
         document.getElementById('confirmDeleteBtn').onclick = async function() {
             if (!pendingDeleteId) {
                 return;
@@ -496,8 +539,10 @@
                 delBtn.onclick = () => {
                     pendingDeleteId = r.id;
                     pendingDeleteRow = tr;
-                    confirmDeleteQuestion.textContent = inputQ.value;
-                    confirmDeleteReply.textContent = inputR.value;
+                    confirmDeleteQuestion.dataset.fullText = inputQ.value || "";
+                    confirmDeleteReply.dataset.fullText = inputR.value || "";
+                    isPreviewExpanded = false;
+                    applyPreview();
                     deleteModal.show();
                 };
                 actionWrap.appendChild(delBtn);
