@@ -139,6 +139,10 @@
             gap: 10px;
             align-items: center;
         }
+        .file-input-wrap {
+            display: grid;
+            gap: 6px;
+        }
         .file-actions {
             display: inline-flex;
             align-items: center;
@@ -154,6 +158,15 @@
             font-weight: 600;
             font-size: 13px;
         }
+        .clear-file-btn {
+            border-radius: 999px;
+            padding: 6px 14px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            background: rgba(148, 163, 184, 0.12);
+            color: #475569;
+            font-weight: 600;
+            font-size: 13px;
+        }
         .remove-file-btn {
             border-radius: 999px;
             padding: 6px 12px;
@@ -166,6 +179,10 @@
         .remove-file-btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+        .file-name {
+            font-size: 12px;
+            color: #64748b;
         }
         .file-hint {
             color: var(--muted);
@@ -366,10 +383,14 @@
                         <div class="file-actions">
                             <label class="form-label mb-0">Images:</label>
                             <button type="button" id="addImageBtn" class="add-file-btn">Add more</button>
+                            <button type="button" id="clearImageBtn" class="clear-file-btn">Clear all</button>
                         </div>
                         <div id="imageInputs" class="file-group">
                             <div class="file-row">
-                                <input type="file" name="images" accept="image/*" class="form-control">
+                                <div class="file-input-wrap">
+                                    <input type="file" name="images" accept="image/*" class="form-control">
+                                    <div class="file-name">No file selected</div>
+                                </div>
                                 <button type="button" class="remove-file-btn" disabled>Remove</button>
                             </div>
                         </div>
@@ -379,10 +400,14 @@
                         <div class="file-actions">
                             <label class="form-label mb-0">Videos:</label>
                             <button type="button" id="addVideoBtn" class="add-file-btn">Add more</button>
+                            <button type="button" id="clearVideoBtn" class="clear-file-btn">Clear all</button>
                         </div>
                         <div id="videoInputs" class="file-group">
                             <div class="file-row">
-                                <input type="file" name="videos" accept="video/*" class="form-control">
+                                <div class="file-input-wrap">
+                                    <input type="file" name="videos" accept="video/*" class="form-control">
+                                    <div class="file-name">No file selected</div>
+                                </div>
                                 <button type="button" class="remove-file-btn" disabled>Remove</button>
                             </div>
                         </div>
@@ -486,6 +511,8 @@
         const videoInputs = document.getElementById('videoInputs');
         const addImageBtn = document.getElementById('addImageBtn');
         const addVideoBtn = document.getElementById('addVideoBtn');
+        const clearImageBtn = document.getElementById('clearImageBtn');
+        const clearVideoBtn = document.getElementById('clearVideoBtn');
 
         function truncateText(text, limit) {
             if (!text) return "";
@@ -517,9 +544,20 @@
             const row = document.createElement('div');
             row.className = 'file-row';
             row.innerHTML = `
-                <input type="file" name="${accept === 'image' ? 'images' : 'videos'}" accept="${accept === 'image' ? 'image/*' : 'video/*'}" class="form-control">
+                <div class="file-input-wrap">
+                    <input type="file" name="${accept === 'image' ? 'images' : 'videos'}" accept="${accept === 'image' ? 'image/*' : 'video/*'}" class="form-control">
+                    <div class="file-name">No file selected</div>
+                </div>
                 <button type="button" class="remove-file-btn">Remove</button>
             `;
+            const input = row.querySelector('input[type="file"]');
+            const nameLabel = row.querySelector('.file-name');
+            const updateName = () => {
+                const files = Array.from(input.files || []);
+                nameLabel.textContent = files.length ? files.map(f => f.name).join(', ') : 'No file selected';
+            };
+            input.addEventListener('change', updateName);
+            updateName();
             const removeBtn = row.querySelector('.remove-file-btn');
             removeBtn.onclick = () => {
                 row.remove();
@@ -537,8 +575,30 @@
             });
         }
 
+        function initFileRows(container) {
+            container.querySelectorAll('.file-row').forEach(row => {
+                const input = row.querySelector('input[type="file"]');
+                const nameLabel = row.querySelector('.file-name');
+                const updateName = () => {
+                    const files = Array.from(input.files || []);
+                    nameLabel.textContent = files.length ? files.map(f => f.name).join(', ') : 'No file selected';
+                };
+                input.addEventListener('change', updateName);
+                updateName();
+            });
+        }
+
+        function resetFileRows(container, accept) {
+            container.innerHTML = '';
+            addFileRow(container, accept);
+        }
+
         addImageBtn.onclick = () => addFileRow(imageInputs, 'image');
         addVideoBtn.onclick = () => addFileRow(videoInputs, 'video');
+        clearImageBtn.onclick = () => resetFileRows(imageInputs, 'image');
+        clearVideoBtn.onclick = () => resetFileRows(videoInputs, 'video');
+        initFileRows(imageInputs);
+        initFileRows(videoInputs);
         updateRemoveButtons(imageInputs);
         updateRemoveButtons(videoInputs);
         document.getElementById('confirmDeleteBtn').onclick = async function() {
