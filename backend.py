@@ -1,10 +1,11 @@
 
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from datetime import datetime, timedelta
+import hashlib
 import sqlite3
 import os
 import re
@@ -20,6 +21,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN", "
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_RESET_TOKEN = os.getenv("ADMIN_RESET_TOKEN", "")
 
 # --- Ensure tables exist ---
 def init_db():
@@ -40,9 +42,61 @@ def init_db():
                 last_message_time TEXT
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                salt TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT
+            )
+        ''')
         conn.commit()
 
 init_db()
+
+def hash_password(password: str, salt_hex: Optional[str] = None):
+    if salt_hex:
+        salt = bytes.fromhex(salt_hex)
+    else:
+        salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000)
+    return salt.hex(), dk.hex()
+
+def verify_password(password: str, salt_hex: str, hash_hex: str) -> bool:
+    _, computed = hash_password(password, salt_hex=salt_hex)
+    return secrets.compare_digest(computed, hash_hex)
+
+def get_admin(username: str):
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, salt, password_hash FROM admins WHERE username=?", (username,))
+        return c.fetchone()
+
+def upsert_admin(username: str, password: str):
+    salt_hex, hash_hex = hash_password(password)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM admins WHERE username=?", (username,))
+        existing = c.fetchone()
+        if existing:
+            c.execute(
+                "UPDATE admins SET salt=?, password_hash=?, created_at=? WHERE username=?",
+                (salt_hex, hash_hex, now, username)
+            )
+        else:
+            c.execute(
+                "INSERT INTO admins (username, salt, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (username, salt_hex, hash_hex, now)
+            )
+        conn.commit()
+
+def ensure_admin_user():
+    if not get_admin(ADMIN_USERNAME):
+        upsert_admin(ADMIN_USERNAME, ADMIN_PASSWORD)
+
+ensure_admin_user()
 
 # Set up Jinja2 templates
 templates = Jinja2Templates(directory="templates")
@@ -295,9 +349,10 @@ async def login(request: Request):
             },
             status_code=403,
         )
-    username = form.get("username")
-    password = form.get("password")
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+    username = (form.get("username") or "").strip()
+    password = form.get("password") or ""
+    admin = get_admin(username)
+    if admin and verify_password(password, admin[2], admin[3]):
         request.session["logged_in"] = True
         return RedirectResponse("/admin", status_code=302)
     new_token = get_csrf_token(request)
@@ -310,6 +365,62 @@ async def login(request: Request):
         },
         status_code=401,
     )
+
+# --- Admin Password Reset (Token) ---
+@app.get("/admin/reset")
+def admin_reset_page(request: Request, token: str = ""):
+    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
+        return HTMLResponse("<h2>Invalid reset token</h2>", status_code=403)
+    csrf_token = get_csrf_token(request)
+    return templates.TemplateResponse(
+        "admin_reset.html",
+        {"request": request, "csrf_token": csrf_token, "error": None, "token": token},
+    )
+
+@app.post("/admin/reset")
+async def admin_reset(request: Request, token: str = ""):
+    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
+        return HTMLResponse("<h2>Invalid reset token</h2>", status_code=403)
+    form = await request.form()
+    csrf_token = form.get("csrf_token")
+    if not csrf_token or csrf_token != request.session.get("csrf_token"):
+        new_token = get_csrf_token(request)
+        return templates.TemplateResponse(
+            "admin_reset.html",
+            {
+                "request": request,
+                "csrf_token": new_token,
+                "error": "Invalid session. Please try again.",
+                "token": token,
+            },
+            status_code=403,
+        )
+    new_password = (form.get("password") or "").strip()
+    confirm_password = (form.get("confirm_password") or "").strip()
+    if len(new_password) < 8:
+        return templates.TemplateResponse(
+            "admin_reset.html",
+            {
+                "request": request,
+                "csrf_token": csrf_token,
+                "error": "Password must be at least 8 characters.",
+                "token": token,
+            },
+            status_code=400,
+        )
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "admin_reset.html",
+            {
+                "request": request,
+                "csrf_token": csrf_token,
+                "error": "Passwords do not match.",
+                "token": token,
+            },
+            status_code=400,
+        )
+    upsert_admin(ADMIN_USERNAME, new_password)
+    return RedirectResponse("/admin/login", status_code=302)
 
 # --- Logout ---
 @app.get("/admin/logout")

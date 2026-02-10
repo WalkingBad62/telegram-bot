@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - Telegram Bot</title>
+    <title>Admin Reset - Totem Bot</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -241,39 +241,39 @@
     <div class="glow glow-2"></div>
     <main class="login-shell">
         <section class="brand-panel">
-            <div class="brand-badge">Telegram Bot</div>
-            <h1>Admin Control Room</h1>
-            <p>Secure sign-in to manage broadcasts, replies, and live user updates with confidence.</p>
+            <div class="brand-badge">Totem Bot</div>
+            <h1>Reset Admin Password</h1>
+            <p>Use the reset token to set a new admin password and regain access.</p>
             <ul class="feature-list">
-                <li>Broadcast updates in minutes.</li>
-                <li>Manage common replies with clarity.</li>
-                <li>Track user activity in one view.</li>
+                <li>Secure token-protected reset.</li>
+                <li>New password is stored as a hash.</li>
+                <li>Instant access after update.</li>
             </ul>
             <div class="brand-foot">
-                <div class="chip">Protected Area</div>
-                <div class="meta">Admin access only</div>
+                <div class="chip">Recovery Mode</div>
+                <div class="meta">Token required</div>
             </div>
         </section>
         <section class="form-panel">
             <div class="form-head">
-                <div class="eyebrow">Admin Login</div>
-                <h2>Welcome back</h2>
-                <p>Enter your credentials to continue.</p>
+                <div class="eyebrow">Password Reset</div>
+                <h2>Create a new password</h2>
+                <p>Minimum 8 characters. Keep it strong.</p>
             </div>
             {% if error %}
             <div class="alert">{{ error }}</div>
             {% endif %}
-            <form method="post" action="/admin/login" class="login-form">
+            <form method="post" action="/admin/reset?token={{ token }}" class="login-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <label class="field">
-                    <span>Username</span>
-                    <input name="username" placeholder="Enter admin username" required autocomplete="username">
+                    <span>New Password</span>
+                    <input name="password" type="password" placeholder="Enter new password" required autocomplete="new-password">
                 </label>
                 <label class="field">
-                    <span>Password</span>
-                    <input name="password" type="password" placeholder="Enter your password" required autocomplete="current-password">
+                    <span>Confirm Password</span>
+                    <input name="confirm_password" type="password" placeholder="Re-enter new password" required autocomplete="new-password">
                 </label>
-                <button type="submit" class="primary-btn">Sign In</button>
+                <button type="submit" class="primary-btn">Update Password</button>
             </form>
         </section>
     </main>
