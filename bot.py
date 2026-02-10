@@ -24,6 +24,16 @@ logging.basicConfig(level=logging.INFO)
 
 # ================= MEMORY =================
 custom_commands = {}
+AWAIT_IMAGEAI_KEY = "await_imageai"
+AWAIT_CURRENCY_KEY = "await_currency_pair"
+
+CURRENCY_PAIRS = {
+    "EURUSD": {"price": "1.19", "link": "http://currency.com/buy/EURUSD/"},
+    "USDJPY": {"price": "N/A", "link": "http://currency.com/buy/USDJPY/"},
+    "AUDCAD": {"price": "N/A", "link": "http://currency.com/buy/AUDCAD/"},
+    "CHFUSD": {"price": "N/A", "link": "http://currency.com/buy/CHFUSD/"},
+    "BTCUSD": {"price": "N/A", "link": "http://currency.com/buy/BTCUSD/"},
+}
 
 # ================= REMOVE MENU =================
 async def remove_menu(app):
@@ -43,15 +53,34 @@ async def aidi(update, context):
 # ================= START =================
 async def start(update, context):
     await store_user(update)
-    welcome_msg = (
-        "Hello miya vai 😄\n"
-        "Bot is alive ✅\n\n"
-        "Available Commands:\n"
-        "/start\n"
-        "/add\n"
-        "/sawa\n"
+    await update.message.reply_text(
+        "Welcome To Currency Exchange Bot\n\n"
+        "User Register and create our account through http://currency.com/"
     )
-    await update.message.reply_text(welcome_msg)
+    await update.message.reply_text(
+        "You can use this following feature:\n\n"
+        "1. ImageAI: /imageai\n"
+        "2. Convert Currency: /currencycoveter"
+    )
+
+# ================= IMAGEAI COMMAND =================
+async def imageai(update, context):
+    await store_user(update)
+    context.user_data[AWAIT_IMAGEAI_KEY] = True
+    await update.message.reply_text("Please Upload your image")
+
+# ================= CURRENCY CONVERTER COMMAND =================
+async def currencycoveter(update, context):
+    await store_user(update)
+    context.user_data[AWAIT_CURRENCY_KEY] = True
+    await update.message.reply_text(
+        "Please Choose a Pair of Currency\n\n"
+        "1. EURUSD\n"
+        "2. USDJPY\n"
+        "3. AUDCAD\n"
+        "4. CHFUSD\n"
+        "5. BTCUSD"
+    )
 
 # ================= STORE USER =================
 async def store_user(update):
@@ -75,6 +104,22 @@ async def normal_message(update, context):
         if "retarget_user" in context.user_data or "retarget_all" in context.user_data:
             await admin_media_handler(update, context)
             return
+
+    if context.user_data.get(AWAIT_CURRENCY_KEY):
+        pair = (update.message.text or "").strip().upper()
+        if pair in CURRENCY_PAIRS:
+            context.user_data.pop(AWAIT_CURRENCY_KEY, None)
+            info = CURRENCY_PAIRS[pair]
+            await update.message.reply_text(
+                f"Price: {info['price']}\n"
+                f"link: {info['link']}"
+            )
+        else:
+            await update.message.reply_text(
+                "Invalid pair. Please choose one of:\n"
+                "EURUSD, USDJPY, AUDCAD, CHFUSD, BTCUSD"
+            )
+        return
 
     try:
         res = requests.post(
@@ -101,6 +146,18 @@ async def user_media_handler(update, context):
         if "retarget_user" in context.user_data or "retarget_all" in context.user_data:
             await admin_media_handler(update, context)
             return
+
+    if context.user_data.get(AWAIT_IMAGEAI_KEY):
+        if update.message.photo:
+            context.user_data.pop(AWAIT_IMAGEAI_KEY, None)
+            await update.message.reply_text(
+                "Currency: USD\n"
+                "Price: $90\n"
+                "Discount: $10"
+            )
+        else:
+            await update.message.reply_text("Please upload an image.")
+        return
 
     if update.message.photo:
         await update.message.reply_text("Image received!")
@@ -138,7 +195,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all"]:
+    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "currencycoveter"]:
         return
 
     if cmd in custom_commands:
@@ -232,6 +289,8 @@ app.add_handler(CommandHandler("sawa", sawa))
 app.add_handler(CommandHandler("aidi", aidi))
 app.add_handler(CommandHandler("retarget", retarget_user))
 app.add_handler(CommandHandler("retarget_all", retarget_all))
+app.add_handler(CommandHandler("imageai", imageai))
+app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, normal_message))
