@@ -26,6 +26,25 @@ CURRENCY_PAIRS = {
     "BTCUSD": {"price": "N/A", "link": "http://currency.com/buy/BTCUSD/"},
 }
 
+DEFAULT_START_MESSAGE = (
+    "Welcome To Currency Exchange Bot\n\n"
+    "User Register and create our account through http://currency.com/\n\n"
+    "You can use this following feature:\n"
+    "1. ImageAI: /imageai\n"
+    "2. Convert Currency: /currencycoveter"
+)
+
+def fetch_start_message():
+    try:
+        res = requests.get(f"{BACKEND_URL}/settings/start-message", timeout=5)
+        if res.status_code == 200:
+            msg = res.json().get("message")
+            if msg:
+                return msg
+    except Exception:
+        pass
+    return DEFAULT_START_MESSAGE
+
 # Initialize bot application
 bot_app = Application.builder().token(TOKEN).build()
 
@@ -56,15 +75,7 @@ async def store_user(update):
 # Start command
 async def start(update, context):
     await store_user(update)
-    await update.message.reply_text(
-        "Welcome To Currency Exchange Bot\n\n"
-        "User Register and create our account through http://currency.com/"
-    )
-    await update.message.reply_text(
-        "You can use this following feature:\n\n"
-        "1. ImageAI: /imageai\n"
-        "2. Convert Currency: /currencycoveter"
-    )
+    await update.message.reply_text(fetch_start_message())
 
 # ImageAI command
 async def imageai(update, context):

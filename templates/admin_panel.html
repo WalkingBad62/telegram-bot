@@ -488,6 +488,24 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
+                    <h2>Start Message</h2>
+                    <div class="muted">Edit the single /start reply shown to users.</div>
+                </div>
+                <div class="tag" style="background: rgba(37, 99, 235, 0.12); color: #1d4ed8;">Bot Flow</div>
+            </div>
+            <form id="startMessageForm" class="form-section">
+                <div class="mb-3">
+                    <label class="form-label">/start reply</label>
+                    <textarea id="startMessageInput" class="form-control" rows="6" placeholder="Enter the /start message"></textarea>
+                    <div class="file-hint">Line breaks will be preserved.</div>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Start Message</button>
+                <div id="startMessageResult" class="mt-2"></div>
+            </form>
+        </div>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
                     <h2>User Overview</h2>
                     <div class="muted">Monitor active users and last seen times.</div>
                 </div>
@@ -551,6 +569,9 @@
         const addVideoBtn = document.getElementById('addVideoBtn');
         const clearImageBtn = document.getElementById('clearImageBtn');
         const clearVideoBtn = document.getElementById('clearVideoBtn');
+        const startMessageInput = document.getElementById('startMessageInput');
+        const startMessageResult = document.getElementById('startMessageResult');
+        const startMessageForm = document.getElementById('startMessageForm');
 
         function truncateText(text, limit) {
             if (!text) return "";
@@ -745,6 +766,52 @@
                 new bootstrap.Tooltip(delBtn);
             });
         }
+
+        async function loadStartMessage() {
+            if (!startMessageInput) {
+                return;
+            }
+            try {
+                const res = await fetch('/settings/start-message');
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                startMessageInput.value = data.message || '';
+            } catch (e) {
+                startMessageResult.textContent = 'Error loading start message.';
+            }
+        }
+
+        if (startMessageForm) {
+            startMessageForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const message = startMessageInput.value || '';
+                if (!message.trim()) {
+                    startMessageResult.textContent = 'Message is required.';
+                    return;
+                }
+                const res = await fetch('/settings/start-message', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ message })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    startMessageResult.textContent = 'Start message saved.';
+                    startMessageInput.value = data.message || message;
+                } else {
+                    startMessageResult.textContent = data.detail || data.error || 'Error saving start message.';
+                }
+            };
+        }
         document.getElementById('addReplyForm').onsubmit = async function(e) {
             e.preventDefault();
             const question = document.getElementById('questionInput').value;
@@ -759,6 +826,7 @@
             loadReplies();
         };
         loadReplies();
+        loadStartMessage();
         document.getElementById('logoutBtn').onclick = function() {
             fetch('/admin/logout').then(() => {
                 window.location.href = '/admin/login';

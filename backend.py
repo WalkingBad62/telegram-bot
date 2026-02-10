@@ -23,6 +23,13 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_RESET_TOKEN = (os.getenv("ADMIN_RESET_TOKEN", "") or "").strip()
+DEFAULT_START_MESSAGE = (
+    "Welcome To Currency Exchange Bot\n\n"
+    "User Register and create our account through http://currency.com/\n\n"
+    "You can use this following feature:\n"
+    "1. ImageAI: /imageai\n"
+    "2. Convert Currency: /currencycoveter"
+)
 
 # --- Ensure tables exist ---
 def init_db():
@@ -52,9 +59,38 @@ def init_db():
                 created_at TEXT
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("start_message", DEFAULT_START_MESSAGE)
+        )
         conn.commit()
 
 init_db()
+
+def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT value FROM settings WHERE key=?", (key,))
+        row = c.fetchone()
+    if row and row[0] is not None:
+        return row[0]
+    return default
+
+def set_setting(key: str, value: str) -> None:
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value)
+        )
+        conn.commit()
 
 def hash_password(password: str, salt_hex: Optional[str] = None):
     if salt_hex:
@@ -153,6 +189,23 @@ async def root():
 @app.get("/health")
 def healthcheck():
     return {"status": "ok"}
+
+# --- Start message settings ---
+@app.get("/settings/start-message")
+def get_start_message():
+    message = get_setting("start_message", DEFAULT_START_MESSAGE)
+    return {"message": message}
+
+@app.put("/settings/start-message")
+async def update_start_message(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    raw_message = data.get("message")
+    if not isinstance(raw_message, str) or not raw_message.strip():
+        raise HTTPException(status_code=400, detail="Message is required.")
+    set_setting("start_message", raw_message)
+    return {"ok": True, "message": raw_message}
 
 # --- Store user (used by bot) ---
 @app.post("/user/store")
