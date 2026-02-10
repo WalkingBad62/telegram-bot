@@ -67,6 +67,11 @@
             transform: translateY(-1px);
             box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
         }
+        .header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
         .grid {
             display: grid;
             grid-template-columns: minmax(0, 1fr);
@@ -355,7 +360,10 @@
                 <h1 class="page-title">Totem Bot Admin Panel</h1>
                 <p class="page-subtitle">Broadcast updates, manage replies, and monitor users in one place.</p>
             </div>
-            <button id="logoutBtn" class="btn-ghost">Logout</button>
+            <div class="header-actions">
+                <a href="/admin/reset" class="btn-ghost">Reset Password</a>
+                <button id="logoutBtn" class="btn-ghost">Logout</button>
+            </div>
         </div>
         <div class="grid">
             <div class="panel-card">

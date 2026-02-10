@@ -263,8 +263,12 @@
             {% if error %}
             <div class="alert">{{ error }}</div>
             {% endif %}
-            <form method="post" action="/admin/reset?token={{ token }}" class="login-form">
+            <form method="post" action="/admin/reset" class="login-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label class="field">
+                    <span>Reset Token</span>
+                    <input name="reset_token" type="password" placeholder="Enter reset token" required value="{{ token }}" autocomplete="off">
+                </label>
                 <label class="field">
                     <span>New Password</span>
                     <input name="password" type="password" placeholder="Enter new password" required autocomplete="new-password">

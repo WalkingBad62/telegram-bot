@@ -370,19 +370,30 @@ async def login(request: Request):
 # --- Admin Password Reset (Token) ---
 @app.get("/admin/reset")
 def admin_reset_page(request: Request, token: str = ""):
-    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
-        return HTMLResponse("<h2>Invalid reset token</h2>", status_code=403)
     csrf_token = get_csrf_token(request)
+    error = None
+    if token and (not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN):
+        error = "Invalid reset token."
     return templates.TemplateResponse(
         "admin_reset.html",
-        {"request": request, "csrf_token": csrf_token, "error": None, "token": token},
+        {"request": request, "csrf_token": csrf_token, "error": error, "token": token},
     )
 
 @app.post("/admin/reset")
 async def admin_reset(request: Request, token: str = ""):
-    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
-        return HTMLResponse("<h2>Invalid reset token</h2>", status_code=403)
     form = await request.form()
+    token = token or (form.get("reset_token") or "").strip()
+    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
+        return templates.TemplateResponse(
+            "admin_reset.html",
+            {
+                "request": request,
+                "csrf_token": get_csrf_token(request),
+                "error": "Invalid reset token.",
+                "token": token,
+            },
+            status_code=403,
+        )
     csrf_token = form.get("csrf_token")
     if not csrf_token or csrf_token != request.session.get("csrf_token"):
         new_token = get_csrf_token(request)
