@@ -506,24 +506,6 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
-                    <h2>Currency Pairs</h2>
-                    <div class="muted">Edit price and link for each currency pair.</div>
-                </div>
-                <div class="tag" style="background: rgba(16, 185, 129, 0.12); color: #047857;">Exchange</div>
-            </div>
-            <div class="table-section">
-                <table id="currencyTable" class="table table-bordered table-striped align-middle">
-                    <thead>
-                        <tr><th>Pair</th><th>Price</th><th>Link</th><th>Actions</th></tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-            <div id="currencyResult" class="mt-2"></div>
-        </div>
-        <div class="panel-card mt-4">
-            <div class="section-header">
-                <div>
                     <h2>User Overview</h2>
                     <div class="muted">Monitor active users and last seen times.</div>
                 </div>
@@ -590,8 +572,6 @@
         const startMessageInput = document.getElementById('startMessageInput');
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
-        const currencyTable = document.getElementById('currencyTable');
-        const currencyResult = document.getElementById('currencyResult');
 
         function truncateText(text, limit) {
             if (!text) return "";
@@ -805,84 +785,6 @@
             }
         }
 
-        async function loadCurrencyPairs() {
-            if (!currencyTable) {
-                return;
-            }
-            try {
-                const res = await fetch('/currency/pairs');
-                if (res.status === 401) {
-                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
-                    setTimeout(() => window.location.href = '/admin/login', 1500);
-                    return;
-                }
-                const data = await res.json();
-                const tbody = currencyTable.querySelector('tbody');
-                tbody.innerHTML = '';
-                (data.pairs || []).forEach(p => {
-                    const tr = document.createElement('tr');
-                    const tdPair = document.createElement('td');
-                    tdPair.textContent = p.pair;
-                    tr.appendChild(tdPair);
-
-                    const tdPrice = document.createElement('td');
-                    const inputPrice = document.createElement('input');
-                    inputPrice.type = 'number';
-                    inputPrice.step = '0.0001';
-                    inputPrice.value = p.price;
-                    inputPrice.className = 'form-control';
-                    tdPrice.appendChild(inputPrice);
-                    tr.appendChild(tdPrice);
-
-                    const tdLink = document.createElement('td');
-                    const inputLink = document.createElement('input');
-                    inputLink.type = 'text';
-                    inputLink.value = p.link;
-                    inputLink.className = 'form-control';
-                    tdLink.appendChild(inputLink);
-                    tr.appendChild(tdLink);
-
-                    const tdAct = document.createElement('td');
-                    const actionWrap = document.createElement('div');
-                    actionWrap.className = 'reply-actions';
-                    const saveBtn = document.createElement('button');
-                    saveBtn.className = 'btn-save';
-                    saveBtn.setAttribute('data-bs-toggle', 'tooltip');
-                    saveBtn.setAttribute('data-bs-title', 'Save currency pair');
-                    saveBtn.innerHTML = `
-                        <span class="btn-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 6L9 17l-5-5"></path>
-                            </svg>
-                        </span>
-                        <span class="btn-text">Save</span>
-                    `;
-                    saveBtn.onclick = async () => {
-                        const priceVal = inputPrice.value;
-                        const linkVal = inputLink.value;
-                        const saveRes = await fetch(`/currency/pairs/${encodeURIComponent(p.pair)}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-                            body: JSON.stringify({ price: priceVal, link: linkVal })
-                        });
-                        const saveData = await saveRes.json();
-                        if (saveRes.ok) {
-                            currencyResult.textContent = `Saved ${p.pair}.`;
-                        } else {
-                            currencyResult.textContent = saveData.detail || saveData.error || 'Error saving pair.';
-                        }
-                    };
-                    actionWrap.appendChild(saveBtn);
-                    tdAct.appendChild(actionWrap);
-                    tr.appendChild(tdAct);
-                    tbody.appendChild(tr);
-                    new bootstrap.Tooltip(saveBtn);
-                });
-            } catch (e) {
-                currencyResult.textContent = 'Error loading currency pairs.';
-            }
-        }
-
         if (startMessageForm) {
             startMessageForm.onsubmit = async function(e) {
                 e.preventDefault();
@@ -925,7 +827,6 @@
         };
         loadReplies();
         loadStartMessage();
-        loadCurrencyPairs();
         document.getElementById('logoutBtn').onclick = function() {
             fetch('/admin/logout').then(() => {
                 window.location.href = '/admin/login';

@@ -23,6 +23,13 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_RESET_TOKEN = (os.getenv("ADMIN_RESET_TOKEN", "") or "").strip()
+CURRENCY_API_URL = (os.getenv("CURRENCY_API_URL", "") or "").strip()
+CURRENCY_API_KEY = (os.getenv("CURRENCY_API_KEY", "") or "").strip()
+CURRENCY_API_KEY_HEADER = (os.getenv("CURRENCY_API_KEY_HEADER", "X-API-KEY") or "X-API-KEY").strip()
+try:
+    CURRENCY_API_TIMEOUT = float(os.getenv("CURRENCY_API_TIMEOUT", "6"))
+except ValueError:
+    CURRENCY_API_TIMEOUT = 6.0
 DEFAULT_START_MESSAGE = (
     "Welcome To Currency Exchange Bot\n\n"
     "User Register and create our account through http://currency.com/\n\n"
@@ -160,23 +167,30 @@ def get_currency_pair(pair: str):
         )
         return c.fetchone()
 
-def get_all_currency_pairs():
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute("SELECT pair, price, link, updated_at FROM currency_pairs ORDER BY pair")
-        return c.fetchall()
-
-def upsert_currency_pair(pair: str, price: float, link: str):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO currency_pairs (pair, price, link, updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(pair) DO UPDATE SET price=excluded.price, link=excluded.link, updated_at=excluded.updated_at",
-            (pair, price, link, now)
-        )
-        conn.commit()
+def fetch_currency_pair_from_api(pair: str):
+    if not CURRENCY_API_URL:
+        return None
+    url = CURRENCY_API_URL
+    params = None
+    if "{pair}" in CURRENCY_API_URL:
+        url = CURRENCY_API_URL.format(pair=pair)
+    else:
+        params = {"pair": pair}
+    headers = {}
+    if CURRENCY_API_KEY:
+        headers[CURRENCY_API_KEY_HEADER or "X-API-KEY"] = CURRENCY_API_KEY
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=CURRENCY_API_TIMEOUT)
+        if res.status_code != 200:
+            return None
+        data = res.json()
+    except Exception:
+        return None
+    price = data.get("price")
+    link = data.get("link")
+    if price is None or not link:
+        return None
+    return {"pair": pair, "price": price, "link": link}
 
 def hash_password(password: str, salt_hex: Optional[str] = None):
     if salt_hex:
@@ -297,48 +311,14 @@ async def update_start_message(request: Request):
 @app.get("/currency/pair/{pair}")
 def currency_pair(pair: str):
     pair_norm = (pair or "").strip().upper()
+    api_data = fetch_currency_pair_from_api(pair_norm)
+    if api_data:
+        return api_data
     row = get_currency_pair(pair_norm)
     if not row:
         raise HTTPException(status_code=404, detail="Pair not found.")
     price, link = row
     return {"pair": pair_norm, "price": price, "link": link}
-
-@app.get("/currency/pairs")
-def currency_pairs(request: Request):
-    require_login(request)
-    rows = get_all_currency_pairs()
-    return {
-        "pairs": [
-            {
-                "pair": row[0],
-                "price": row[1],
-                "link": row[2],
-                "updated_at": row[3],
-            }
-            for row in rows
-        ]
-    }
-
-@app.put("/currency/pairs/{pair}")
-async def update_currency_pair(pair: str, request: Request):
-    require_login(request)
-    require_csrf(request)
-    data = await request.json()
-    raw_price = data.get("price")
-    raw_link = (data.get("link") or "").strip()
-    pair_norm = (pair or "").strip().upper()
-    if not pair_norm:
-        raise HTTPException(status_code=400, detail="Pair is required.")
-    if raw_price is None:
-        raise HTTPException(status_code=400, detail="Price is required.")
-    try:
-        price = float(raw_price)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Price must be a number.")
-    if not raw_link:
-        raise HTTPException(status_code=400, detail="Link is required.")
-    upsert_currency_pair(pair_norm, price, raw_link)
-    return {"ok": True, "pair": pair_norm, "price": price, "link": raw_link}
 
 # --- ImageAI price endpoint ---
 @app.post("/imageai/price")
