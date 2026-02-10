@@ -231,6 +231,31 @@
             border: none;
             color: #1f2937;
         }
+        .confirm-details {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.04);
+            border: 1px dashed rgba(15, 23, 42, 0.08);
+            display: grid;
+            gap: 10px;
+            font-size: 13px;
+        }
+        .confirm-details .detail-row {
+            display: grid;
+            gap: 6px;
+        }
+        .confirm-details .detail-label {
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .confirm-details .detail-value {
+            color: #1f2937;
+            word-break: break-word;
+        }
         .section-header {
             display: flex;
             align-items: center;
@@ -351,6 +376,16 @@
                 </div>
                 <div class="modal-body">
                     This reply will be removed permanently. Are you sure you want to proceed?
+                    <div class="confirm-details">
+                        <div class="detail-row">
+                            <div class="detail-label">Question</div>
+                            <div id="confirmDeleteQuestion" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Reply</div>
+                            <div id="confirmDeleteReply" class="detail-value"></div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -367,6 +402,8 @@
         let pendingDeleteId = null;
         let pendingDeleteRow = null;
         const deleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+        const confirmDeleteQuestion = document.getElementById('confirmDeleteQuestion');
+        const confirmDeleteReply = document.getElementById('confirmDeleteReply');
         document.getElementById('confirmDeleteBtn').onclick = async function() {
             if (!pendingDeleteId) {
                 return;
@@ -417,6 +454,8 @@
                 actionWrap.className = 'reply-actions';
                 const saveBtn = document.createElement('button');
                 saveBtn.className = 'btn-save';
+                saveBtn.setAttribute('data-bs-toggle', 'tooltip');
+                saveBtn.setAttribute('data-bs-title', 'Save changes');
                 saveBtn.innerHTML = `
                     <span class="btn-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -440,6 +479,8 @@
                 actionWrap.appendChild(saveBtn);
                 const delBtn = document.createElement('button');
                 delBtn.className = 'btn-delete';
+                delBtn.setAttribute('data-bs-toggle', 'tooltip');
+                delBtn.setAttribute('data-bs-title', 'Delete reply');
                 delBtn.innerHTML = `
                     <span class="btn-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -455,12 +496,16 @@
                 delBtn.onclick = () => {
                     pendingDeleteId = r.id;
                     pendingDeleteRow = tr;
+                    confirmDeleteQuestion.textContent = inputQ.value;
+                    confirmDeleteReply.textContent = inputR.value;
                     deleteModal.show();
                 };
                 actionWrap.appendChild(delBtn);
                 tdAct.appendChild(actionWrap);
                 tr.appendChild(tdAct);
                 tbody.appendChild(tr);
+                new bootstrap.Tooltip(saveBtn);
+                new bootstrap.Tooltip(delBtn);
             });
         }
         document.getElementById('addReplyForm').onsubmit = async function(e) {
