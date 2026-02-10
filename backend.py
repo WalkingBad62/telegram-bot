@@ -368,32 +368,65 @@ async def login(request: Request):
     )
 
 # --- Admin Password Reset (Token) ---
+def reset_token_valid(token: str) -> bool:
+    return bool(ADMIN_RESET_TOKEN) and secrets.compare_digest(token, ADMIN_RESET_TOKEN)
+
 @app.get("/admin/reset")
-def admin_reset_page(request: Request, token: str = ""):
+def admin_reset_token_page(request: Request, token: str = ""):
+    if token and reset_token_valid(token):
+        request.session["reset_token_ok"] = True
+        return RedirectResponse("/admin/reset/form", status_code=302)
     csrf_token = get_csrf_token(request)
-    error = None
-    if token and (not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN):
-        error = "Invalid reset token."
+    error = "Invalid reset token." if token else None
     return templates.TemplateResponse(
-        "admin_reset.html",
-        {"request": request, "csrf_token": csrf_token, "error": error, "token": token},
+        "admin_reset_token.html",
+        {"request": request, "csrf_token": csrf_token, "error": error},
     )
 
-@app.post("/admin/reset")
-async def admin_reset(request: Request, token: str = ""):
+@app.post("/admin/reset/token")
+async def admin_reset_token(request: Request):
     form = await request.form()
-    token = token or (form.get("reset_token") or "").strip()
-    if not ADMIN_RESET_TOKEN or token != ADMIN_RESET_TOKEN:
+    csrf_token = form.get("csrf_token")
+    if not csrf_token or csrf_token != request.session.get("csrf_token"):
+        new_token = get_csrf_token(request)
         return templates.TemplateResponse(
-            "admin_reset.html",
+            "admin_reset_token.html",
             {
                 "request": request,
-                "csrf_token": get_csrf_token(request),
-                "error": "Invalid reset token.",
-                "token": token,
+                "csrf_token": new_token,
+                "error": "Invalid session. Please try again.",
             },
             status_code=403,
         )
+    token = (form.get("reset_token") or "").strip()
+    if not reset_token_valid(token):
+        return templates.TemplateResponse(
+            "admin_reset_token.html",
+            {
+                "request": request,
+                "csrf_token": csrf_token,
+                "error": "Invalid reset token.",
+            },
+            status_code=403,
+        )
+    request.session["reset_token_ok"] = True
+    return RedirectResponse("/admin/reset/form", status_code=302)
+
+@app.get("/admin/reset/form")
+def admin_reset_form(request: Request):
+    if not request.session.get("reset_token_ok"):
+        return RedirectResponse("/admin/reset", status_code=302)
+    csrf_token = get_csrf_token(request)
+    return templates.TemplateResponse(
+        "admin_reset.html",
+        {"request": request, "csrf_token": csrf_token, "error": None},
+    )
+
+@app.post("/admin/reset")
+async def admin_reset(request: Request):
+    if not request.session.get("reset_token_ok"):
+        return RedirectResponse("/admin/reset", status_code=302)
+    form = await request.form()
     csrf_token = form.get("csrf_token")
     if not csrf_token or csrf_token != request.session.get("csrf_token"):
         new_token = get_csrf_token(request)
@@ -403,7 +436,6 @@ async def admin_reset(request: Request, token: str = ""):
                 "request": request,
                 "csrf_token": new_token,
                 "error": "Invalid session. Please try again.",
-                "token": token,
             },
             status_code=403,
         )
@@ -416,7 +448,6 @@ async def admin_reset(request: Request, token: str = ""):
                 "request": request,
                 "csrf_token": csrf_token,
                 "error": "Password must be at least 8 characters.",
-                "token": token,
             },
             status_code=400,
         )
@@ -427,11 +458,11 @@ async def admin_reset(request: Request, token: str = ""):
                 "request": request,
                 "csrf_token": csrf_token,
                 "error": "Passwords do not match.",
-                "token": token,
             },
             status_code=400,
         )
     upsert_admin(ADMIN_USERNAME, new_password)
+    request.session.pop("reset_token_ok", None)
     return RedirectResponse("/admin/login", status_code=302)
 
 # --- Logout ---

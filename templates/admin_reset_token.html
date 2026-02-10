@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Reset - Totem Bot</title>
+    <title>Reset Token - Totem Bot</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -264,44 +264,37 @@
     <main class="login-shell">
         <section class="brand-panel">
             <div class="brand-badge">Totem Bot</div>
-            <h1>Reset Admin Password</h1>
-            <p>Token verified. Set a new admin password to regain access.</p>
+            <h1>Reset Token Check</h1>
+            <p>Enter your reset token to unlock the password reset page.</p>
             <ul class="feature-list">
-                <li>Secure token-protected reset.</li>
-                <li>New password is stored as a hash.</li>
-                <li>Instant access after update.</li>
+                <li>Token required to continue.</li>
+                <li>Keeps reset secure and controlled.</li>
+                <li>Quick access to password update.</li>
             </ul>
             <div class="brand-foot">
-                <div class="chip">Step 2</div>
-                <div class="meta">Create new password</div>
+                <div class="chip">Step 1</div>
+                <div class="meta">Verify token first</div>
             </div>
         </section>
         <section class="form-panel">
             <div class="form-head">
-                <div class="eyebrow">Password Reset</div>
-                <h2>Create a new password</h2>
-                <p>Minimum 8 characters. Keep it strong.</p>
+                <div class="eyebrow">Reset Token</div>
+                <h2>Verify access</h2>
+                <p>Use the token from your `.env` file.</p>
             </div>
             {% if error %}
             <div class="alert">{{ error }}</div>
             {% endif %}
-            <form method="post" action="/admin/reset" class="login-form">
+            <form method="post" action="/admin/reset/token" class="login-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <label class="field">
-                    <span>New Password</span>
+                    <span>Reset Token</span>
                     <div class="input-toggle">
-                        <input id="newPassword" name="password" type="password" placeholder="Enter new password" required autocomplete="new-password">
-                        <button type="button" class="toggle-btn" data-target="newPassword">Show</button>
+                        <input id="resetTokenInput" name="reset_token" type="password" placeholder="Enter reset token" required autocomplete="off">
+                        <button type="button" class="toggle-btn" data-target="resetTokenInput">Show</button>
                     </div>
                 </label>
-                <label class="field">
-                    <span>Confirm Password</span>
-                    <div class="input-toggle">
-                        <input id="confirmPassword" name="confirm_password" type="password" placeholder="Re-enter new password" required autocomplete="new-password">
-                        <button type="button" class="toggle-btn" data-target="confirmPassword">Show</button>
-                    </div>
-                </label>
-                <button type="submit" class="primary-btn">Update Password</button>
+                <button type="submit" class="primary-btn">Continue</button>
             </form>
         </section>
     </main>
