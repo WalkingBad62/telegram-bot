@@ -883,6 +883,7 @@ def get_admin_panel(request: Request):
 # python -m uvicorn backend:app --host 0.0.0.0 --port 8000
 # To on the admin panel
 # http://localhost:8000/admin/login
+# http://localhost:8002/admin/login
 # for 2nd bot (trading bot)
 # $env:BOT_MODE="trading"; $env:DATABASE_URL="bot_trading.db"; $env:PORT="8002"; python main.py
 #  $env:BOT_MODE="trading"; $env:BACKEND_URL="http://127.0.0.1:8002"; python bot.py
