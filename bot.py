@@ -29,7 +29,6 @@ logging.basicConfig(level=logging.INFO)
 # ================= MEMORY =================
 custom_commands = {}
 AWAIT_IMAGEAI_KEY = "await_imageai"
-AWAIT_GAJAAI_CLONE_KEY = "await_gajaai_clone"
 AWAIT_CURRENCY_KEY = "await_currency_pair"
 
 CURRENCY_PAIRS = {
@@ -53,16 +52,14 @@ def build_default_start_message(mode: str) -> str:
             "Welcome To Trading Bot\n\n"
             "Upload your chart screenshot for instant analysis.\n\n"
             "You can use this following feature:\n"
-            "1. GajaAI: /gajaai\n"
-            "2. GajaAI Clone: /gajaai_clone"
+            "1. GajaAI: /gajaai"
         )
     return (
         "Welcome To Currency Exchange Bot\n\n"
         "User Register and create our account through http://currency.com/\n\n"
         "You can use this following feature:\n"
         "1. GajaAI: /gajaai\n"
-        "2. GajaAI Clone: /gajaai_clone\n"
-        "3. Convert Currency: /currencycoveter"
+        "2. Convert Currency: /currencycoveter"
     )
 
 DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
@@ -100,22 +97,6 @@ def fetch_imageai_price(file_bytes, filename):
     try:
         files = {"file": (filename, file_bytes)}
         res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=10)
-        if res.status_code == 200:
-            return res.json()
-        try:
-            data = res.json()
-            detail = data.get("detail", data)
-        except Exception:
-            detail = res.text
-        return {"error": detail}
-    except Exception:
-        pass
-    return None
-
-def fetch_gajaai_clone_price(file_bytes, filename):
-    try:
-        files = {"file": (filename, file_bytes)}
-        res = requests.post(f"{BACKEND_URL}/gajaai-clone/price", files=files, timeout=10)
         if res.status_code == 200:
             return res.json()
         try:
@@ -181,12 +162,6 @@ async def start(update, context):
 async def imageai(update, context):
     await store_user(update)
     context.user_data[AWAIT_IMAGEAI_KEY] = True
-    await update.message.reply_text("Please Upload your image")
-
-# ================= GAJAAI CLONE COMMAND =================
-async def gajaai_clone(update, context):
-    await store_user(update)
-    context.user_data[AWAIT_GAJAAI_CLONE_KEY] = True
     await update.message.reply_text("Please Upload your image")
 
 # ================= CURRENCY CONVERTER COMMAND =================
@@ -294,24 +269,6 @@ async def user_media_handler(update, context):
             await update.message.reply_text("Please upload an image.")
         return
 
-    if context.user_data.get(AWAIT_GAJAAI_CLONE_KEY):
-        if update.message.photo:
-            context.user_data.pop(AWAIT_GAJAAI_CLONE_KEY, None)
-            try:
-                photo = update.message.photo[-1]
-                tg_file = await photo.get_file()
-                file_bytes = await tg_file.download_as_bytearray()
-                data = fetch_gajaai_clone_price(bytes(file_bytes), f"{photo.file_unique_id}.jpg")
-                if data:
-                    await update.message.reply_text(build_ai_reply(data))
-                else:
-                    await update.message.reply_text("Image processed, but result not available.")
-            except Exception:
-                await update.message.reply_text("Image processed, but result not available.")
-        else:
-            await update.message.reply_text("Please upload an image.")
-        return
-
     if update.message.photo:
         await update.message.reply_text("Image received!")
     elif update.message.video:
@@ -348,7 +305,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "gajaai_clone", "currencycoveter"]:
+    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "currencycoveter"]:
         return
 
     if cmd in custom_commands:
@@ -444,7 +401,6 @@ app.add_handler(CommandHandler("retarget", retarget_user))
 app.add_handler(CommandHandler("retarget_all", retarget_all))
 app.add_handler(CommandHandler("imageai", imageai))
 app.add_handler(CommandHandler("gajaai", imageai))
-app.add_handler(CommandHandler("gajaai_clone", gajaai_clone))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))

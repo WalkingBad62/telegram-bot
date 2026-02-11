@@ -52,16 +52,14 @@ def build_default_start_message(mode: str) -> str:
             "Welcome To Trading Bot\n\n"
             "Upload your chart screenshot for instant analysis.\n\n"
             "You can use this following feature:\n"
-            "1. GajaAI: /gajaai\n"
-            "2. GajaAI Clone: /gajaai_clone"
+            "1. GajaAI: /gajaai"
         )
     return (
         "Welcome To Currency Exchange Bot\n\n"
         "User Register and create our account through http://currency.com/\n\n"
         "You can use this following feature:\n"
         "1. GajaAI: /gajaai\n"
-        "2. GajaAI Clone: /gajaai_clone\n"
-        "3. Convert Currency: /currencycoveter"
+        "2. Convert Currency: /currencycoveter"
     )
 
 DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
@@ -75,6 +73,15 @@ DEFAULT_CURRENCY_PAIRS = {
 
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
+
+def sanitize_start_message(message: str) -> str:
+    if not isinstance(message, str):
+        return message
+    cleaned = message
+    cleaned = cleaned.replace("2. GajaAI Clone: /gajaai_clone\n", "")
+    cleaned = cleaned.replace("2. GajaAI Clone: /gajaai_clone", "")
+    cleaned = cleaned.replace("3. Convert Currency: /currencycoveter", "2. Convert Currency: /currencycoveter")
+    return cleaned
 
 # --- Ensure tables exist ---
 def init_db():
@@ -355,6 +362,7 @@ def get_start_message():
     message = get_setting(start_message_setting_key())
     if message is None:
         message = get_setting("start_message", DEFAULT_START_MESSAGE)
+    message = sanitize_start_message(message)
     return {"message": message, "mode": BOT_MODE}
 
 @app.put("/settings/start-message")
@@ -365,6 +373,7 @@ async def update_start_message(request: Request):
     raw_message = data.get("message")
     if not isinstance(raw_message, str) or not raw_message.strip():
         raise HTTPException(status_code=400, detail="Message is required.")
+    raw_message = sanitize_start_message(raw_message)
     set_setting(start_message_setting_key(), raw_message)
     return {"ok": True, "message": raw_message, "mode": BOT_MODE}
 
@@ -409,11 +418,6 @@ async def gajaai_price(file: UploadFile = File(...)):
         "price": price,
         "discount": discount
     }
-
-# --- GajaAI clone price endpoint ---
-@app.post("/gajaai-clone/price")
-async def gajaai_clone_price(file: UploadFile = File(...)):
-    return await gajaai_price(file)
 
 # --- Store user (used by bot) ---
 @app.post("/user/store")
@@ -875,9 +879,10 @@ def get_admin_panel(request: Request):
     return templates.TemplateResponse("admin_panel.html", {"request": request, "csrf_token": csrf_token})
 
 
-# local host web
-# $env:TELEGRAM_BOT_TOKEN=" Bot Tocken"
 # To run the backend server, use:
 # python -m uvicorn backend:app --host 0.0.0.0 --port 8000
 # To on the admin panel
 # http://localhost:8000/admin/login
+# for 2nd bot (trading bot)
+# $env:BOT_MODE="trading"; $env:DATABASE_URL="bot_trading.db"; $env:PORT="8002"; python main.py
+#  $env:BOT_MODE="trading"; $env:BACKEND_URL="http://127.0.0.1:8002"; python bot.py

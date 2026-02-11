@@ -1,0 +1,94 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Currency Backend",
+      "type": "shell",
+      "command": "python main.py",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BOT_MODE": "currency",
+          "DATABASE_URL": "bot_currency.db",
+          "PORT": "8000"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dual-bot"
+      }
+    },
+    {
+      "label": "Currency Bot",
+      "type": "shell",
+      "command": "python bot.py",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BOT_MODE": "currency",
+          "BACKEND_URL": "http://127.0.0.1:8000"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dual-bot"
+      }
+    },
+    {
+      "label": "Trading Backend",
+      "type": "shell",
+      "command": "python main.py",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BOT_MODE": "trading",
+          "DATABASE_URL": "bot_trading.db",
+          "PORT": "8002"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dual-bot"
+      }
+    },
+    {
+      "label": "Trading Bot",
+      "type": "shell",
+      "command": "python bot.py",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BOT_MODE": "trading",
+          "BACKEND_URL": "http://127.0.0.1:8002"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dual-bot"
+      }
+    },
+    {
+      "label": "Run Both Bots (VS Code)",
+      "dependsOn": [
+        "Currency Backend",
+        "Currency Bot",
+        "Trading Backend",
+        "Trading Bot"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}
