@@ -119,6 +119,68 @@ def format_analysis_value(value):
         return "\n".join(str(item) for item in value)
     return str(value)
 
+def format_analysis_price(value):
+    try:
+        return f"{float(value):.4f}"
+    except Exception:
+        return str(value)
+
+def title_text(value):
+    text = str(value or "").replace("_", " ").strip()
+    return text.title() if text else ""
+
+def build_trading_summary(analysis):
+    if isinstance(analysis, dict) and isinstance(analysis.get("analysis"), dict):
+        if analysis.get("success") is False:
+            message = analysis.get("message") or analysis.get("detail") or "analysis failed"
+            return f"Trading analysis failed: {message}"
+        analysis = analysis.get("analysis") or {}
+
+    if not isinstance(analysis, dict):
+        return format_analysis_value(analysis)
+
+    rows = []
+    pair = analysis.get("pair")
+    if pair is not None:
+        rows.append(f"Pair: {pair}")
+
+    trend = title_text(analysis.get("current_trend"))
+    if trend:
+        rows.append(f"Trend: {trend}")
+
+    signal = str(analysis.get("signal", "")).upper().strip()
+    strength = analysis.get("signal_strength")
+    if signal and strength is not None:
+        rows.append(f"Signal: {signal} ({strength}%)")
+    elif signal:
+        rows.append(f"Signal: {signal}")
+    elif strength is not None:
+        rows.append(f"Signal Strength: {strength}%")
+
+    pattern = title_text(analysis.get("chart_pattern"))
+    if pattern:
+        rows.append(f"Pattern: {pattern}")
+
+    chart_type = title_text(analysis.get("chart_type"))
+    if chart_type:
+        rows.append(f"Chart Type: {chart_type}")
+
+    levels = (
+        ("entry_price", "Entry Price"),
+        ("take_profit_price", "Take Profit"),
+        ("stop_loss_price", "Stop Loss"),
+        ("support_zone_price", "Support Zone"),
+        ("resistance_zone_price", "Resistance Zone"),
+    )
+    for key, label in levels:
+        value = analysis.get(key)
+        if value is not None:
+            rows.append(f"{label}: {format_analysis_price(value)}")
+
+    if not rows:
+        return format_analysis_value(analysis)
+    return "Trading Analysis\n\n" + "\n".join(rows)
+
 def build_ai_reply(data):
     if not isinstance(data, dict):
         return "Image processed, but response format is invalid."
@@ -128,7 +190,7 @@ def build_ai_reply(data):
         analysis = data.get("analysis")
         if analysis is None:
             analysis = data
-        return format_analysis_value(analysis)
+        return build_trading_summary(analysis)
     currency = data.get("currency", "USD")
     price = format_money(data.get("price", ""))
     discount = format_money(data.get("discount", ""))
