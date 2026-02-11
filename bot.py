@@ -194,32 +194,33 @@ def build_trading_summary(analysis):
 
     trend = title_text(get_ci(analysis, "current_trend") or get_ci(analysis, "trend"))
     trend_text = trend if trend else "N/A"
-
-    extras = []
-    signal = get_ci(analysis, "signal")
-    if is_present(signal):
-        extras.append(f"Signal={str(signal).upper()}")
+    signal = str(get_ci(analysis, "signal") or "").upper().strip()
+    signal_text = signal if signal else "N/A"
     strength = get_ci(analysis, "signal_strength")
-    if is_present(strength):
-        extras.append(f"Strength={strength}%")
-    pattern = get_ci(analysis, "chart_pattern")
-    if is_present(pattern):
-        extras.append(f"Pattern={title_text(pattern)}")
-    chart_type = get_ci(analysis, "chart_type")
-    if is_present(chart_type):
-        extras.append(f"Type={title_text(chart_type)}")
+    strength_text = f"{strength}%" if is_present(strength) else "N/A"
+    pattern = title_text(get_ci(analysis, "chart_pattern"))
+    pattern_text = pattern if pattern else "N/A"
+    chart_type = title_text(get_ci(analysis, "chart_type"))
+    chart_type_text = chart_type if chart_type else "N/A"
+    entry = get_ci(analysis, "entry_price")
+    take_profit = get_ci(analysis, "take_profit_price")
+    stop_loss = get_ci(analysis, "stop_loss_price")
+    support = get_ci(analysis, "support_zone_price")
+    resistance = get_ci(analysis, "resistance_zone_price")
 
-    price_keys = (
-        ("entry_price", "Entry"),
-        ("take_profit_price", "TP"),
-        ("stop_loss_price", "SL"),
-        ("support_zone_price", "Support"),
-        ("resistance_zone_price", "Resistance"),
-    )
-    for key, label in price_keys:
-        value = get_ci(analysis, key)
-        if is_present(value):
-            extras.append(f"{label}={format_analysis_price(value)}")
+    rows = [
+        f"Pair: {pair_text}",
+        f"Current Trend: {trend_text}",
+        f"Signal: {signal_text}",
+        f"Signal Strength: {strength_text}",
+        f"Chart Pattern: {pattern_text}",
+        f"Chart Type: {chart_type_text}",
+        f"Entry Price: {format_analysis_price(entry) if is_present(entry) else 'N/A'}",
+        f"Take Profit Price: {format_analysis_price(take_profit) if is_present(take_profit) else 'N/A'}",
+        f"Stop Loss Price: {format_analysis_price(stop_loss) if is_present(stop_loss) else 'N/A'}",
+        f"Support Zone Price: {format_analysis_price(support) if is_present(support) else 'N/A'}",
+        f"Resistance Zone Price: {format_analysis_price(resistance) if is_present(resistance) else 'N/A'}",
+    ]
 
     known_keys = {
         "pair", "current_trend", "signal", "signal_strength", "chart_pattern", "chart_type",
@@ -231,14 +232,9 @@ def build_trading_summary(analysis):
             continue
         if not is_present(value):
             continue
-        extras.append(f"{title_text(key)}: {value}")
-    other_text = ", ".join(extras[:4]) if extras else "No valid trading setup detected"
+        rows.append(f"{title_text(key)}: {value}")
 
-    return (
-        f"Pair: {pair_text}\n"
-        f"Current Trend: {trend_text}\n"
-        f"Other: {other_text}"
-    )
+    return "\n".join(rows)
 
 def build_ai_reply(data):
     if not isinstance(data, dict):
