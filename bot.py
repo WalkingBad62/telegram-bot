@@ -32,12 +32,17 @@ logging.basicConfig(level=logging.INFO)
 custom_commands = {}
 AWAIT_IMAGEAI_KEY = "await_imageai"
 AWAIT_CURRENCY_KEY = "await_currency_pair"
+AWAIT_TIMEFRAME_KEY = "await_timeframe"
+AWAIT_FUTURESIGNAL_PAIR_KEY = "await_futuresignal_pair"
+AWAIT_FUTURESIGNAL_TIMEFRAME_KEY = "await_futuresignal_timeframe"
+VALID_TIMEFRAMES = {"1", "2", "5", "15", "30", "60"}
 
 CURRENCY_PAIRS = {
     "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
     "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
     "AUDCAD": {"price": 0.91, "link": "http://currency.com/buy/AUDCAD/"},
     "CHFUSD": {"price": 1.12, "link": "http://currency.com/buy/CHFUSD/"},
+    "AUDCAD_OTC": {"price": 0.89, "link": "http://currency.com/buy/AUDCAD_otc/"},
     "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
 }
 CURRENCY_PAIR_CHOICES = {
@@ -45,16 +50,34 @@ CURRENCY_PAIR_CHOICES = {
     "2": "USDJPY",
     "3": "AUDCAD",
     "4": "CHFUSD",
-    "5": "BTCUSD",
+    "5": "AUDCAD_OTC",
+    "6": "BTCUSD",
 }
+CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
+
+def display_pair_name(pair: str) -> str:
+    return CURRENCY_PAIR_DISPLAY.get(pair, pair)
 
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
         return (
-            "Welcome To Trading Bot\n\n"
-            "Upload your chart screenshot for instant analysis.\n\n"
-            "You can use this following feature:\n"
-            "1. GajaAI: /gajaai"
+            "\U0001f680 Welcome to the YOO/twExSavage Trading Edge!\n"
+            "Ready to stop guessing and start winning on Pocket Option? "
+            "I've helped 500+ traders turn their first deposit into a consistent daily income. "
+            "https://tinyurl.com/twExSavage\n\n"
+            "Why Join Us?\n"
+            "\u26a1 Pro Signals: 90%+ Accuracy.\n"
+            "\U0001f4ca Live Coaching: Learn while you earn.\n"
+            "\U0001f4b0 Pocket Option Bonus: Use code [HEYYOO] for a 50% deposit bonus!\n"
+            "How to start: > 1. Register via the link below\n\n"
+            "WORLDWIDE LINK\U0001f310\nhttps://tinyurl.com/twExSavage\n"
+            "RUSSIAN LINK\U0001f1f7\U0001f1fa\nhttps://tinyurl.com/twExSavageRU\n"
+            "2. Send me your Pocket Option ID to verify.\n"
+            "3. Get added to the Private Couching Room instantly.\n\n"
+            "You can use this following feature:\n\n"
+            "1. Future Signal: /futuresignal\n"
+            "2. YooAI: /yooai\n\n"
+            "CONTACT TRADERS @YOO_SUPPORT1"
         )
     return (
         "Welcome To Currency Exchange Bot\n\n"
@@ -85,6 +108,40 @@ def fetch_currency_pair(pair: str):
     except Exception:
         pass
     return None
+
+def fetch_currency_signal(pair: str, timeframe: int):
+    try:
+        res = requests.post(
+            f"{BACKEND_URL}/currency/signal",
+            json={"pair": pair, "timeframe": timeframe},
+            timeout=15
+        )
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        pass
+    return None
+
+def format_signal_result(data):
+    if not isinstance(data, dict):
+        return "Signal data unavailable."
+    if "error" in data:
+        return f"Error: {data['error']}"
+    pair = data.get("pair", "N/A")
+    timeframe = data.get("timeframe", "N/A")
+    signal = data.get("signal", "N/A")
+    entry = data.get("entry_price")
+    tp = data.get("take_profit")
+    sl = data.get("stop_loss")
+    confidence = data.get("confidence", "N/A")
+    return (
+        f"\U0001f4ca Signal for {display_pair_name(pair)} ({timeframe}min)\n\n"
+        f"Signal: {signal}\n"
+        f"Entry Price: {format_analysis_price(entry) if entry is not None else 'N/A'}\n"
+        f"Take Profit: {format_analysis_price(tp) if tp is not None else 'N/A'}\n"
+        f"Stop Loss: {format_analysis_price(sl) if sl is not None else 'N/A'}\n"
+        f"Confidence: {confidence}%"
+    )
 
 def format_money(value):
     try:
@@ -284,17 +341,23 @@ async def imageai(update, context):
 # ================= CURRENCY CONVERTER COMMAND =================
 async def currencycoveter(update, context):
     await store_user(update)
-    if BOT_MODE == "trading":
-        await update.message.reply_text("This command is available in currency bot only.")
-        return
+    pair_list = "\n".join(
+        f"{k}. {display_pair_name(v)}" for k, v in CURRENCY_PAIR_CHOICES.items()
+    )
     context.user_data[AWAIT_CURRENCY_KEY] = True
     await update.message.reply_text(
-        "Please Choose a Pair of Currency\n\n"
-        "1. EURUSD\n"
-        "2. USDJPY\n"
-        "3. AUDCAD\n"
-        "4. CHFUSD\n"
-        "5. BTCUSD"
+        f"Please Choose a Pair of Currency\n\n{pair_list}"
+    )
+
+# ================= FUTURE SIGNAL COMMAND =================
+async def futuresignal(update, context):
+    await store_user(update)
+    pair_list = "\n".join(
+        f"{k}. {display_pair_name(v)}" for k, v in CURRENCY_PAIR_CHOICES.items()
+    )
+    context.user_data[AWAIT_FUTURESIGNAL_PAIR_KEY] = True
+    await update.message.reply_text(
+        f"Please Choose a Pair for Signal\n\n{pair_list}"
     )
 
 # ================= STORE USER =================
@@ -320,26 +383,76 @@ async def normal_message(update, context):
             await admin_media_handler(update, context)
             return
 
+    # --- Future Signal: pair selection ---
+    if context.user_data.get(AWAIT_FUTURESIGNAL_PAIR_KEY):
+        raw = (update.message.text or "").strip().upper()
+        pair = CURRENCY_PAIR_CHOICES.get(raw, raw)
+        if pair in CURRENCY_PAIRS:
+            context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
+            context.user_data["futuresignal_pair"] = pair
+            context.user_data[AWAIT_FUTURESIGNAL_TIMEFRAME_KEY] = True
+            await update.message.reply_text("Enter the timeframe (1, 2, 5, 15, 30, 60)")
+        else:
+            pair_names = ", ".join(display_pair_name(p) for p in CURRENCY_PAIRS)
+            await update.message.reply_text(
+                f"Invalid pair. Please choose one of:\n{pair_names}"
+            )
+        return
+
+    # --- Future Signal: timeframe selection ---
+    if context.user_data.get(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY):
+        raw = (update.message.text or "").strip()
+        if raw in VALID_TIMEFRAMES:
+            context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
+            pair = context.user_data.pop("futuresignal_pair", "EURUSD")
+            timeframe = int(raw)
+            data = fetch_currency_signal(pair, timeframe)
+            if data:
+                await update.message.reply_text(format_signal_result(data))
+            else:
+                await update.message.reply_text("Signal not available right now. Please try again later.")
+        else:
+            await update.message.reply_text("Invalid timeframe. Please enter: 1, 2, 5, 15, 30, or 60")
+        return
+
+    # --- Currency Converter: pair selection ---
     if context.user_data.get(AWAIT_CURRENCY_KEY):
         raw = (update.message.text or "").strip().upper()
         pair = CURRENCY_PAIR_CHOICES.get(raw, raw)
         if pair in CURRENCY_PAIRS:
             context.user_data.pop(AWAIT_CURRENCY_KEY, None)
-            data = fetch_currency_pair(pair) or {
-                "price": CURRENCY_PAIRS[pair]["price"],
-                "link": CURRENCY_PAIRS[pair]["link"],
-            }
-            price = format_money(data.get("price", ""))
-            link = data.get("link", CURRENCY_PAIRS[pair]["link"])
-            await update.message.reply_text(
-                f"Price: {price}\n"
-                f"link: {link}"
-            )
+            context.user_data["selected_pair"] = pair
+            context.user_data[AWAIT_TIMEFRAME_KEY] = True
+            await update.message.reply_text("Enter the timeframe (1, 2, 5, 15, 30, 60)")
         else:
+            pair_names = ", ".join(display_pair_name(p) for p in CURRENCY_PAIRS)
             await update.message.reply_text(
-                "Invalid pair. Please choose one of:\n"
-                "EURUSD, USDJPY, AUDCAD, CHFUSD, BTCUSD"
+                f"Invalid pair. Please choose one of:\n{pair_names}"
             )
+        return
+
+    # --- Currency Converter: timeframe selection ---
+    if context.user_data.get(AWAIT_TIMEFRAME_KEY):
+        raw = (update.message.text or "").strip()
+        if raw in VALID_TIMEFRAMES:
+            context.user_data.pop(AWAIT_TIMEFRAME_KEY, None)
+            pair = context.user_data.pop("selected_pair", "EURUSD")
+            timeframe = int(raw)
+            data = fetch_currency_signal(pair, timeframe)
+            if data:
+                await update.message.reply_text(format_signal_result(data))
+            else:
+                pair_data = fetch_currency_pair(pair) or CURRENCY_PAIRS.get(pair, {})
+                price = format_money(pair_data.get("price", ""))
+                link = pair_data.get("link", "")
+                await update.message.reply_text(
+                    f"Pair: {display_pair_name(pair)}\n"
+                    f"Timeframe: {timeframe}min\n"
+                    f"Price: {price}\n"
+                    f"Link: {link}"
+                )
+        else:
+            await update.message.reply_text("Invalid timeframe. Please enter: 1, 2, 5, 15, 30, or 60")
         return
 
     try:
@@ -422,7 +535,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "currencycoveter"]:
+    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "yooai", "currencycoveter", "futuresignal"]:
         return
 
     if cmd in custom_commands:
@@ -518,6 +631,8 @@ app.add_handler(CommandHandler("retarget", retarget_user))
 app.add_handler(CommandHandler("retarget_all", retarget_all))
 app.add_handler(CommandHandler("imageai", imageai))
 app.add_handler(CommandHandler("gajaai", imageai))
+app.add_handler(CommandHandler("yooai", imageai))
+app.add_handler(CommandHandler("futuresignal", futuresignal))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))

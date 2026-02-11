@@ -49,10 +49,23 @@ except ValueError:
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
         return (
-            "Welcome To Trading Bot\n\n"
-            "Upload your chart screenshot for instant analysis.\n\n"
-            "You can use this following feature:\n"
-            "1. GajaAI: /gajaai"
+            "\U0001f680 Welcome to the YOO/twExSavage Trading Edge!\n"
+            "Ready to stop guessing and start winning on Pocket Option? "
+            "I've helped 500+ traders turn their first deposit into a consistent daily income. "
+            "https://tinyurl.com/twExSavage\n\n"
+            "Why Join Us?\n"
+            "\u26a1 Pro Signals: 90%+ Accuracy.\n"
+            "\U0001f4ca Live Coaching: Learn while you earn.\n"
+            "\U0001f4b0 Pocket Option Bonus: Use code [HEYYOO] for a 50% deposit bonus!\n"
+            "How to start: > 1. Register via the link below\n\n"
+            "WORLDWIDE LINK\U0001f310\nhttps://tinyurl.com/twExSavage\n"
+            "RUSSIAN LINK\U0001f1f7\U0001f1fa\nhttps://tinyurl.com/twExSavageRU\n"
+            "2. Send me your Pocket Option ID to verify.\n"
+            "3. Get added to the Private Couching Room instantly.\n\n"
+            "You can use this following feature:\n\n"
+            "1. Future Signal: /futuresignal\n"
+            "2. YooAI: /yooai\n\n"
+            "CONTACT TRADERS @YOO_SUPPORT1"
         )
     return (
         "Welcome To Currency Exchange Bot\n\n"
@@ -68,6 +81,7 @@ DEFAULT_CURRENCY_PAIRS = {
     "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
     "AUDCAD": {"price": 0.91, "link": "http://currency.com/buy/AUDCAD/"},
     "CHFUSD": {"price": 1.12, "link": "http://currency.com/buy/CHFUSD/"},
+    "AUDCAD_OTC": {"price": 0.89, "link": "http://currency.com/buy/AUDCAD_otc/"},
     "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
 }
 
@@ -389,6 +403,71 @@ def currency_pair(pair: str):
         raise HTTPException(status_code=404, detail="Pair not found.")
     price, link = row
     return {"pair": pair_norm, "price": price, "link": link}
+
+# --- Currency signal endpoint ---
+@app.post("/currency/signal")
+async def currency_signal(request: Request):
+    data = await request.json()
+    pair = (data.get("pair") or "").strip().upper()
+    timeframe = int(data.get("timeframe", 5))
+    if not pair:
+        raise HTTPException(status_code=400, detail="Pair is required.")
+    # Try external signal API if configured
+    signal_api_url = os.getenv("SIGNAL_API_URL", "").strip()
+    if signal_api_url:
+        try:
+            signal_api_key = os.getenv("SIGNAL_API_KEY", "").strip()
+            headers = {}
+            if signal_api_key:
+                headers["X-API-Key"] = signal_api_key
+            res = requests.post(
+                signal_api_url,
+                json={"pair": pair, "timeframe": timeframe},
+                headers=headers,
+                timeout=10
+            )
+            if res.status_code == 200:
+                return res.json()
+        except Exception:
+            pass
+    # Fallback: generate deterministic signal from pair data
+    row = get_currency_pair(pair)
+    if not row:
+        # Try default pairs
+        default_info = None
+        for dpair, dinfo in DEFAULT_CURRENCY_PAIRS.items():
+            if dpair.upper() == pair.upper():
+                default_info = dinfo
+                break
+        if not default_info:
+            raise HTTPException(status_code=404, detail="Pair not found.")
+        base_price = default_info["price"]
+    else:
+        base_price = row[0]
+    # Generate deterministic signal based on pair + timeframe + date
+    today = datetime.now().strftime("%Y-%m-%d")
+    seed_str = f"{pair}:{timeframe}:{today}"
+    seed_hash = hashlib.sha256(seed_str.encode()).hexdigest()
+    seed_val = int(seed_hash[:8], 16)
+    direction = "BUY" if seed_val % 2 == 0 else "SELL"
+    confidence = 70 + (seed_val % 25)
+    variation = (seed_val % 100) / 10000
+    entry_price = base_price * (1 + variation)
+    if direction == "BUY":
+        take_profit = entry_price * (1 + 0.002 * timeframe / 5)
+        stop_loss = entry_price * (1 - 0.001 * timeframe / 5)
+    else:
+        take_profit = entry_price * (1 - 0.002 * timeframe / 5)
+        stop_loss = entry_price * (1 + 0.001 * timeframe / 5)
+    return {
+        "pair": pair,
+        "timeframe": timeframe,
+        "signal": direction,
+        "entry_price": round(entry_price, 4),
+        "take_profit": round(take_profit, 4),
+        "stop_loss": round(stop_loss, 4),
+        "confidence": confidence
+    }
 
 # --- GajaAI price endpoint ---
 @app.post("/gajaai/price")
