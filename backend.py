@@ -34,7 +34,7 @@ DEFAULT_START_MESSAGE = (
     "Welcome To Currency Exchange Bot\n\n"
     "User Register and create our account through http://currency.com/\n\n"
     "You can use this following feature:\n"
-    "1. ImageAI: /imageai\n"
+    "1. GajaAI: /gajaai\n"
     "2. Convert Currency: /currencycoveter"
 )
 DEFAULT_CURRENCY_PAIRS = {
@@ -320,9 +320,9 @@ def currency_pair(pair: str):
     price, link = row
     return {"pair": pair_norm, "price": price, "link": link}
 
-# --- ImageAI price endpoint ---
-@app.post("/imageai/price")
-async def imageai_price(file: UploadFile = File(...)):
+# --- GajaAI price endpoint ---
+@app.post("/gajaai/price")
+async def gajaai_price(file: UploadFile = File(...)):
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file.")

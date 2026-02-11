@@ -46,7 +46,7 @@ DEFAULT_START_MESSAGE = (
     "Welcome To Currency Exchange Bot\n\n"
     "User Register and create our account through http://currency.com/\n\n"
     "You can use this following feature:\n"
-    "1. ImageAI: /imageai\n"
+    "1. GajaAI: /gajaai\n"
     "2. Convert Currency: /currencycoveter"
 )
 
@@ -82,7 +82,7 @@ def format_money(value):
 def fetch_imageai_price(file_bytes, filename):
     try:
         files = {"file": (filename, file_bytes)}
-        res = requests.post(f"{BACKEND_URL}/imageai/price", files=files, timeout=10)
+        res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=10)
         if res.status_code == 200:
             return res.json()
     except Exception:
@@ -260,7 +260,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "currencycoveter"]:
+    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "currencycoveter"]:
         return
 
     if cmd in custom_commands:
@@ -351,10 +351,11 @@ app.post_init = remove_menu  # 🔥 MENU HIDDEN HERE
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("add", add_command))
 app.add_handler(CommandHandler("sawa", sawa))
-app.add_handler(CommandHandler("aidi", aidi))
+app.add_handler(CommandHandler("id", aidi))
 app.add_handler(CommandHandler("retarget", retarget_user))
 app.add_handler(CommandHandler("retarget_all", retarget_all))
 app.add_handler(CommandHandler("imageai", imageai))
+app.add_handler(CommandHandler("gajaai", imageai))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))

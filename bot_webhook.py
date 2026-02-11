@@ -37,7 +37,7 @@ DEFAULT_START_MESSAGE = (
     "Welcome To Currency Exchange Bot\n\n"
     "User Register and create our account through http://currency.com/\n\n"
     "You can use this following feature:\n"
-    "1. ImageAI: /imageai\n"
+    "1. GajaAI: /gajaai\n"
     "2. Convert Currency: /currencycoveter"
 )
 
@@ -73,7 +73,7 @@ def format_money(value):
 def fetch_imageai_price(file_bytes, filename):
     try:
         files = {"file": (filename, file_bytes)}
-        res = requests.post(f"{BACKEND_URL}/imageai/price", files=files, timeout=10)
+        res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=10)
         if res.status_code == 200:
             return res.json()
     except Exception:
@@ -242,6 +242,7 @@ async def broadcast(update, context):
 # Add handlers
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CommandHandler("imageai", imageai))
+bot_app.add_handler(CommandHandler("gajaai", imageai))
 bot_app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 bot_app.add_handler(CommandHandler("broadcast", broadcast))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
