@@ -5,6 +5,8 @@ from telegram.ext import (
 from telegram.error import RetryAfter
 from datetime import datetime
 import asyncio
+import ast
+import json
 import logging
 import os
 import requests
@@ -129,57 +131,114 @@ def title_text(value):
     text = str(value or "").replace("_", " ").strip()
     return text.title() if text else ""
 
+def is_present(value):
+    return value not in (None, "", [], {})
+
+def get_ci(mapping, key):
+    key_l = key.lower()
+    for k, v in mapping.items():
+        if str(k).lower() == key_l:
+            return v
+    return None
+
+def parse_maybe_json(value):
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        return ast.literal_eval(text)
+    except Exception:
+        return value
+
+def unwrap_trading_analysis(analysis):
+    analysis = parse_maybe_json(analysis)
+    if not isinstance(analysis, dict):
+        return analysis
+    success = get_ci(analysis, "success")
+    if success is False:
+        message = get_ci(analysis, "message") or get_ci(analysis, "detail") or "analysis failed"
+        return {"_error": f"Trading analysis failed: {message}"}
+    nested_analysis = get_ci(analysis, "analysis")
+    if nested_analysis is not None:
+        nested_analysis = parse_maybe_json(nested_analysis)
+        if isinstance(nested_analysis, dict):
+            analysis = nested_analysis
+    for key in ("TradingAnalysis", "trading_analysis", "result", "data"):
+        nested = get_ci(analysis, key)
+        nested = parse_maybe_json(nested)
+        if isinstance(nested, dict):
+            analysis = nested
+            break
+    return analysis
+
 def build_trading_summary(analysis):
-    if isinstance(analysis, dict) and isinstance(analysis.get("analysis"), dict):
-        if analysis.get("success") is False:
-            message = analysis.get("message") or analysis.get("detail") or "analysis failed"
-            return f"Trading analysis failed: {message}"
-        analysis = analysis.get("analysis") or {}
+    analysis = unwrap_trading_analysis(analysis)
 
     if not isinstance(analysis, dict):
         return format_analysis_value(analysis)
+    if analysis.get("_error"):
+        return analysis.get("_error")
 
-    rows = []
-    pair = analysis.get("pair")
-    if pair is not None:
-        rows.append(f"Pair: {pair}")
+    pair = get_ci(analysis, "pair")
+    if not is_present(pair):
+        pair = get_ci(analysis, "symbol")
+    pair_text = str(pair) if is_present(pair) else "N/A"
 
-    trend = title_text(analysis.get("current_trend"))
-    if trend:
-        rows.append(f"Trend: {trend}")
+    trend = title_text(get_ci(analysis, "current_trend") or get_ci(analysis, "trend"))
+    trend_text = trend if trend else "N/A"
 
-    signal = str(analysis.get("signal", "")).upper().strip()
-    strength = analysis.get("signal_strength")
-    if signal and strength is not None:
-        rows.append(f"Signal: {signal} ({strength}%)")
-    elif signal:
-        rows.append(f"Signal: {signal}")
-    elif strength is not None:
-        rows.append(f"Signal Strength: {strength}%")
+    extras = []
+    signal = get_ci(analysis, "signal")
+    if is_present(signal):
+        extras.append(f"Signal={str(signal).upper()}")
+    strength = get_ci(analysis, "signal_strength")
+    if is_present(strength):
+        extras.append(f"Strength={strength}%")
+    pattern = get_ci(analysis, "chart_pattern")
+    if is_present(pattern):
+        extras.append(f"Pattern={title_text(pattern)}")
+    chart_type = get_ci(analysis, "chart_type")
+    if is_present(chart_type):
+        extras.append(f"Type={title_text(chart_type)}")
 
-    pattern = title_text(analysis.get("chart_pattern"))
-    if pattern:
-        rows.append(f"Pattern: {pattern}")
-
-    chart_type = title_text(analysis.get("chart_type"))
-    if chart_type:
-        rows.append(f"Chart Type: {chart_type}")
-
-    levels = (
-        ("entry_price", "Entry Price"),
-        ("take_profit_price", "Take Profit"),
-        ("stop_loss_price", "Stop Loss"),
-        ("support_zone_price", "Support Zone"),
-        ("resistance_zone_price", "Resistance Zone"),
+    price_keys = (
+        ("entry_price", "Entry"),
+        ("take_profit_price", "TP"),
+        ("stop_loss_price", "SL"),
+        ("support_zone_price", "Support"),
+        ("resistance_zone_price", "Resistance"),
     )
-    for key, label in levels:
-        value = analysis.get(key)
-        if value is not None:
-            rows.append(f"{label}: {format_analysis_price(value)}")
+    for key, label in price_keys:
+        value = get_ci(analysis, key)
+        if is_present(value):
+            extras.append(f"{label}={format_analysis_price(value)}")
 
-    if not rows:
-        return format_analysis_value(analysis)
-    return "Trading Analysis\n\n" + "\n".join(rows)
+    known_keys = {
+        "pair", "current_trend", "signal", "signal_strength", "chart_pattern", "chart_type",
+        "entry_price", "take_profit_price", "stop_loss_price", "support_zone_price", "resistance_zone_price",
+        "symbol", "trend",
+    }
+    for key, value in analysis.items():
+        if str(key).lower() in known_keys:
+            continue
+        if not is_present(value):
+            continue
+        extras.append(f"{title_text(key)}: {value}")
+    other_text = ", ".join(extras[:4]) if extras else "No valid trading setup detected"
+
+    return (
+        f"Pair: {pair_text}\n"
+        f"Current Trend: {trend_text}\n"
+        f"Other: {other_text}"
+    )
 
 def build_ai_reply(data):
     if not isinstance(data, dict):
