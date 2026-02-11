@@ -9,6 +9,8 @@ import ast
 import json
 import logging
 import os
+import subprocess
+import sys
 import requests
 from dotenv import load_dotenv
 
@@ -312,6 +314,99 @@ def build_ai_reply(data):
         f"Discount: ${discount}"
     )
 
+
+# ================= FUTURE SIGNAL SUBPROCESS =================
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FUTURE_SIGNAL_SCRIPT = os.path.join(SCRIPT_DIR, "future_signal.py")
+
+async def run_future_signal_script(pair: str, timeframe: int) -> str:
+    """Run future_signal.py as a subprocess and return its stdout output."""
+    # Normalize pair name for the script
+    asset_name = pair.replace("_OTC", "_otc")
+
+    cmd = [
+        sys.executable, FUTURE_SIGNAL_SCRIPT,
+        "--assets", asset_name,
+        "--timeframe", str(timeframe),
+        "--percentage", "70",
+        "--days", "10",
+        "--martingale", "0",
+    ]
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=SCRIPT_DIR,
+                )
+            ),
+            timeout=130,
+        )
+
+        output = result.stdout.strip()
+        error_output = result.stderr.strip()
+
+        if result.returncode != 0:
+            logging.error(f"future_signal.py error (rc={result.returncode}): {error_output}")
+            if not output:
+                return f"Script error: {error_output[:500]}" if error_output else "Script failed with no output."
+
+        # Filter out non-signal lines (keep only signal lines + total)
+        lines = output.split("\n")
+        signal_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Signal lines look like: "EURUSD M5 14:30 CALL"
+            # Also keep "Total signals:" and "No signals found"
+            parts = line.split()
+            if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
+                signal_lines.append(f"📊 {line}")
+            elif "Total signals" in line or "No signals found" in line:
+                signal_lines.append(f"\n{line}")
+            elif "list created successfully" in line:
+                continue  # skip this internal message
+
+        if signal_lines:
+            header = f"🔮 Future Signals for {pair} (M{timeframe})\n{'━' * 30}\n"
+            return header + "\n".join(signal_lines)
+        elif output:
+            return output[:3000]
+        else:
+            return ""
+
+    except asyncio.TimeoutError:
+        logging.error("future_signal.py timed out")
+        return "⚠️ Signal generation timed out. Please try again."
+    except Exception as e:
+        logging.error(f"future_signal.py exception: {e}")
+        return f"⚠️ Error running signal script: {str(e)[:200]}"
+
+
+def split_message(text: str, max_length: int = 4000) -> list:
+    """Split a long message into chunks for Telegram (max 4096 chars)."""
+    if len(text) <= max_length:
+        return [text]
+    chunks = []
+    while text:
+        if len(text) <= max_length:
+            chunks.append(text)
+            break
+        # Find a good split point (newline)
+        split_at = text.rfind("\n", 0, max_length)
+        if split_at <= 0:
+            split_at = max_length
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    return chunks
+
 # ================= REMOVE MENU =================
 async def remove_menu(app):
     await app.bot.set_my_commands([])
@@ -406,11 +501,18 @@ async def normal_message(update, context):
             context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
             pair = context.user_data.pop("futuresignal_pair", "EURUSD")
             timeframe = int(raw)
-            data = fetch_currency_signal(pair, timeframe)
-            if data:
-                await update.message.reply_text(format_signal_result(data))
+            await update.message.reply_text(
+                f"\u23f3 Generating signals for {display_pair_name(pair)} (M{timeframe})...\n"
+                "This may take 30-60 seconds. Please wait."
+            )
+            # Run future_signal.py as subprocess
+            signal_output = await run_future_signal_script(pair, timeframe)
+            if signal_output:
+                # Split long output into chunks (Telegram max 4096 chars)
+                for chunk in split_message(signal_output, 4000):
+                    await update.message.reply_text(chunk)
             else:
-                await update.message.reply_text("Signal not available right now. Please try again later.")
+                await update.message.reply_text("No signals found or script error. Please try again later.")
         else:
             await update.message.reply_text("Invalid timeframe. Please enter: 1, 2, 5, 15, 30, or 60")
         return
