@@ -34,6 +34,46 @@ python main.py  # Backend on port 8000
 python bot.py   # Bot with polling
 ```
 
+## Run 2 Bots From Same Folder
+
+Use two backend processes and two bot processes with different env values.
+Set `.env` like this first:
+
+```env
+BOT_TOKEN_CURRENCY="your_currency_bot_token"
+BOT_TOKEN_TRADING="your_trading_bot_token"
+```
+
+### 1) Currency backend + bot
+
+```powershell
+# Terminal A (backend)
+$env:BOT_MODE="currency"
+$env:DATABASE_URL="bot_currency.db"
+python -m uvicorn backend:app --host 0.0.0.0 --port 8000
+
+# Terminal B (bot)
+$env:BOT_MODE="currency"
+$env:BACKEND_URL="http://127.0.0.1:8000"
+python bot.py
+```
+
+### 2) Trading backend + bot
+
+```powershell
+# Terminal C (backend)
+$env:BOT_MODE="trading"
+$env:DATABASE_URL="bot_trading.db"
+$env:TRADING_API_URL="https://yoofirmtrading.xyz/api/analyze-screenshot"
+$env:TRADING_API_KEY="YOUR_TRADING_API_KEY"
+python -m uvicorn backend:app --host 0.0.0.0 --port 8002
+
+# Terminal D (bot)
+$env:BOT_MODE="trading"
+$env:BACKEND_URL="http://127.0.0.1:8002"
+python bot.py
+```
+
 ## 🌐 Deployment to Render (24/7 Free)
 
 ### Quick Deploy

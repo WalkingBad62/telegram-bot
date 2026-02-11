@@ -14,11 +14,19 @@ from dotenv import load_dotenv
 import secrets
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=True)
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=False)
 
 # --- Configuration ---
 DB_NAME = os.getenv("DATABASE_URL", "bot_users.db")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN", "")
+BOT_MODE = (os.getenv("BOT_MODE", "currency") or "currency").strip().lower()
+if BOT_MODE not in ("currency", "trading"):
+    BOT_MODE = "currency"
+MODE_SUFFIX = BOT_MODE.upper()
+TELEGRAM_BOT_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN")
+    or os.getenv(f"BOT_TOKEN_{MODE_SUFFIX}")
+    or os.getenv("BOT_TOKEN", "")
+)
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -26,17 +34,37 @@ ADMIN_RESET_TOKEN = (os.getenv("ADMIN_RESET_TOKEN", "") or "").strip()
 CURRENCY_API_URL = (os.getenv("CURRENCY_API_URL", "") or "").strip()
 CURRENCY_API_KEY = (os.getenv("CURRENCY_API_KEY", "") or "").strip()
 CURRENCY_API_KEY_HEADER = (os.getenv("CURRENCY_API_KEY_HEADER", "X-API-KEY") or "X-API-KEY").strip()
+TRADING_API_URL = (os.getenv("TRADING_API_URL", "https://yoofirmtrading.xyz/api/analyze-screenshot") or "").strip()
+TRADING_API_KEY = (os.getenv("TRADING_API_KEY", "") or "").strip()
+TRADING_API_KEY_HEADER = (os.getenv("TRADING_API_KEY_HEADER", "X-API-Key") or "X-API-Key").strip()
 try:
     CURRENCY_API_TIMEOUT = float(os.getenv("CURRENCY_API_TIMEOUT", "6"))
 except ValueError:
     CURRENCY_API_TIMEOUT = 6.0
-DEFAULT_START_MESSAGE = (
-    "Welcome To Currency Exchange Bot\n\n"
-    "User Register and create our account through http://currency.com/\n\n"
-    "You can use this following feature:\n"
-    "1. GajaAI: /gajaai\n"
-    "2. Convert Currency: /currencycoveter"
-)
+try:
+    TRADING_API_TIMEOUT = float(os.getenv("TRADING_API_TIMEOUT", "20"))
+except ValueError:
+    TRADING_API_TIMEOUT = 20.0
+
+def build_default_start_message(mode: str) -> str:
+    if mode == "trading":
+        return (
+            "Welcome To Trading Bot\n\n"
+            "Upload your chart screenshot for instant analysis.\n\n"
+            "You can use this following feature:\n"
+            "1. GajaAI: /gajaai\n"
+            "2. GajaAI Clone: /gajaai_clone"
+        )
+    return (
+        "Welcome To Currency Exchange Bot\n\n"
+        "User Register and create our account through http://currency.com/\n\n"
+        "You can use this following feature:\n"
+        "1. GajaAI: /gajaai\n"
+        "2. GajaAI Clone: /gajaai_clone\n"
+        "3. Convert Currency: /currencycoveter"
+    )
+
+DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
 DEFAULT_CURRENCY_PAIRS = {
     "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
     "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
@@ -44,6 +72,9 @@ DEFAULT_CURRENCY_PAIRS = {
     "CHFUSD": {"price": 1.12, "link": "http://currency.com/buy/CHFUSD/"},
     "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
 }
+
+def start_message_setting_key() -> str:
+    return f"start_message_{BOT_MODE}"
 
 # --- Ensure tables exist ---
 def init_db():
@@ -99,6 +130,10 @@ def init_db():
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("start_message", DEFAULT_START_MESSAGE)
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (start_message_setting_key(), DEFAULT_START_MESSAGE)
         )
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for pair, info in DEFAULT_CURRENCY_PAIRS.items():
@@ -157,6 +192,30 @@ def generate_price_from_hash(image_hash: str):
     if discount >= price:
         discount = max(0, price - 1)
     return float(price), float(discount)
+
+def analyze_trading_screenshot(content: bytes, filename: str):
+    if not TRADING_API_URL:
+        return None, "Trading API URL not configured."
+    headers = {}
+    if TRADING_API_KEY:
+        headers[TRADING_API_KEY_HEADER or "X-API-Key"] = TRADING_API_KEY
+    files = {"screenshot": (filename or "screenshot.png", content)}
+    try:
+        res = requests.post(
+            TRADING_API_URL,
+            headers=headers,
+            files=files,
+            timeout=TRADING_API_TIMEOUT,
+        )
+    except Exception as exc:
+        return None, f"Trading API request failed: {exc}"
+    try:
+        data = res.json()
+    except Exception:
+        data = {"raw": res.text}
+    if res.status_code != 200:
+        return None, f"Trading API returned {res.status_code}: {data}"
+    return data, None
 
 def get_currency_pair(pair: str):
     with sqlite3.connect(DB_NAME) as conn:
@@ -293,8 +352,10 @@ def healthcheck():
 # --- Start message settings ---
 @app.get("/settings/start-message")
 def get_start_message():
-    message = get_setting("start_message", DEFAULT_START_MESSAGE)
-    return {"message": message}
+    message = get_setting(start_message_setting_key())
+    if message is None:
+        message = get_setting("start_message", DEFAULT_START_MESSAGE)
+    return {"message": message, "mode": BOT_MODE}
 
 @app.put("/settings/start-message")
 async def update_start_message(request: Request):
@@ -304,8 +365,8 @@ async def update_start_message(request: Request):
     raw_message = data.get("message")
     if not isinstance(raw_message, str) or not raw_message.strip():
         raise HTTPException(status_code=400, detail="Message is required.")
-    set_setting("start_message", raw_message)
-    return {"ok": True, "message": raw_message}
+    set_setting(start_message_setting_key(), raw_message)
+    return {"ok": True, "message": raw_message, "mode": BOT_MODE}
 
 # --- Currency price endpoint ---
 @app.get("/currency/pair/{pair}")
@@ -326,6 +387,14 @@ async def gajaai_price(file: UploadFile = File(...)):
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file.")
+    if BOT_MODE == "trading":
+        analysis, error = analyze_trading_screenshot(content, file.filename or "screenshot.png")
+        if error:
+            raise HTTPException(status_code=502, detail=error)
+        return {
+            "mode": "trading",
+            "analysis": analysis,
+        }
     image_hash = hashlib.sha256(content).hexdigest()
     row = get_image_price(image_hash)
     if row:
@@ -335,10 +404,16 @@ async def gajaai_price(file: UploadFile = File(...)):
         price, discount = generate_price_from_hash(image_hash)
         save_image_price(image_hash, currency, price, discount)
     return {
+        "mode": "currency",
         "currency": currency,
         "price": price,
         "discount": discount
     }
+
+# --- GajaAI clone price endpoint ---
+@app.post("/gajaai-clone/price")
+async def gajaai_clone_price(file: UploadFile = File(...)):
+    return await gajaai_price(file)
 
 # --- Store user (used by bot) ---
 @app.post("/user/store")

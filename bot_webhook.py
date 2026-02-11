@@ -14,8 +14,14 @@ load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BOT_MODE = (os.getenv("BOT_MODE", "currency") or "currency").strip().lower()
+if BOT_MODE not in ("currency", "trading"):
+    BOT_MODE = "currency"
+MODE_SUFFIX = BOT_MODE.upper()
+TOKEN = os.getenv(f"BOT_TOKEN_{MODE_SUFFIX}") or TOKEN
 
 AWAIT_IMAGEAI_KEY = "await_imageai"
+AWAIT_GAJAAI_CLONE_KEY = "await_gajaai_clone"
 AWAIT_CURRENCY_KEY = "await_currency_pair"
 
 CURRENCY_PAIRS = {
@@ -33,13 +39,25 @@ CURRENCY_PAIR_CHOICES = {
     "5": "BTCUSD",
 }
 
-DEFAULT_START_MESSAGE = (
-    "Welcome To Currency Exchange Bot\n\n"
-    "User Register and create our account through http://currency.com/\n\n"
-    "You can use this following feature:\n"
-    "1. GajaAI: /gajaai\n"
-    "2. Convert Currency: /currencycoveter"
-)
+def build_default_start_message(mode: str) -> str:
+    if mode == "trading":
+        return (
+            "Welcome To Trading Bot\n\n"
+            "Upload your chart screenshot for instant analysis.\n\n"
+            "You can use this following feature:\n"
+            "1. GajaAI: /gajaai\n"
+            "2. GajaAI Clone: /gajaai_clone"
+        )
+    return (
+        "Welcome To Currency Exchange Bot\n\n"
+        "User Register and create our account through http://currency.com/\n\n"
+        "You can use this following feature:\n"
+        "1. GajaAI: /gajaai\n"
+        "2. GajaAI Clone: /gajaai_clone\n"
+        "3. Convert Currency: /currencycoveter"
+    )
+
+DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
 
 def fetch_start_message():
     try:
@@ -76,9 +94,60 @@ def fetch_imageai_price(file_bytes, filename):
         res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=10)
         if res.status_code == 200:
             return res.json()
+        try:
+            data = res.json()
+            detail = data.get("detail", data)
+        except Exception:
+            detail = res.text
+        return {"error": detail}
     except Exception:
         pass
     return None
+
+def fetch_gajaai_clone_price(file_bytes, filename):
+    try:
+        files = {"file": (filename, file_bytes)}
+        res = requests.post(f"{BACKEND_URL}/gajaai-clone/price", files=files, timeout=10)
+        if res.status_code == 200:
+            return res.json()
+        try:
+            data = res.json()
+            detail = data.get("detail", data)
+        except Exception:
+            detail = res.text
+        return {"error": detail}
+    except Exception:
+        pass
+    return None
+
+def format_analysis_value(value):
+    if isinstance(value, dict):
+        parts = []
+        for key, val in value.items():
+            parts.append(f"{key}: {val}")
+        return "\n".join(parts)
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return str(value)
+
+def build_ai_reply(data):
+    if not isinstance(data, dict):
+        return "Image processed, but response format is invalid."
+    if "error" in data:
+        return f"Error: {data.get('error')}"
+    if data.get("mode") == "trading" or "analysis" in data:
+        analysis = data.get("analysis")
+        if analysis is None:
+            analysis = data
+        return format_analysis_value(analysis)
+    currency = data.get("currency", "USD")
+    price = format_money(data.get("price", ""))
+    discount = format_money(data.get("discount", ""))
+    return (
+        f"Currency: {currency}\n"
+        f"Price: ${price}\n"
+        f"Discount: ${discount}"
+    )
 
 # Initialize bot application
 bot_app = Application.builder().token(TOKEN).build()
@@ -118,9 +187,18 @@ async def imageai(update, context):
     context.user_data[AWAIT_IMAGEAI_KEY] = True
     await update.message.reply_text("Please Upload your image")
 
+# GajaAI Clone command
+async def gajaai_clone(update, context):
+    await store_user(update)
+    context.user_data[AWAIT_GAJAAI_CLONE_KEY] = True
+    await update.message.reply_text("Please Upload your image")
+
 # Currency converter command
 async def currencycoveter(update, context):
     await store_user(update)
+    if BOT_MODE == "trading":
+        await update.message.reply_text("This command is available in currency bot only.")
+        return
     context.user_data[AWAIT_CURRENCY_KEY] = True
     await update.message.reply_text(
         "Please Choose a Pair of Currency\n\n"
@@ -185,18 +263,29 @@ async def media_handler(update, context):
                 file_bytes = await tg_file.download_as_bytearray()
                 data = fetch_imageai_price(bytes(file_bytes), f"{photo.file_unique_id}.jpg")
                 if data:
-                    currency = data.get("currency", "USD")
-                    price = format_money(data.get("price", ""))
-                    discount = format_money(data.get("discount", ""))
-                    await update.message.reply_text(
-                        f"Currency: {currency}\n"
-                        f"Price: ${price}\n"
-                        f"Discount: ${discount}"
-                    )
+                    await update.message.reply_text(build_ai_reply(data))
                 else:
-                    await update.message.reply_text("Image processed, but price not available.")
+                    await update.message.reply_text("Image processed, but result not available.")
             except Exception:
-                await update.message.reply_text("Image processed, but price not available.")
+                await update.message.reply_text("Image processed, but result not available.")
+        else:
+            await update.message.reply_text("Please upload an image.")
+        return
+
+    if context.user_data.get(AWAIT_GAJAAI_CLONE_KEY):
+        if update.message.photo:
+            context.user_data.pop(AWAIT_GAJAAI_CLONE_KEY, None)
+            try:
+                photo = update.message.photo[-1]
+                tg_file = await photo.get_file()
+                file_bytes = await tg_file.download_as_bytearray()
+                data = fetch_gajaai_clone_price(bytes(file_bytes), f"{photo.file_unique_id}.jpg")
+                if data:
+                    await update.message.reply_text(build_ai_reply(data))
+                else:
+                    await update.message.reply_text("Image processed, but result not available.")
+            except Exception:
+                await update.message.reply_text("Image processed, but result not available.")
         else:
             await update.message.reply_text("Please upload an image.")
         return
@@ -243,6 +332,7 @@ async def broadcast(update, context):
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CommandHandler("imageai", imageai))
 bot_app.add_handler(CommandHandler("gajaai", imageai))
+bot_app.add_handler(CommandHandler("gajaai_clone", gajaai_clone))
 bot_app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 bot_app.add_handler(CommandHandler("broadcast", broadcast))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
