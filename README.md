@@ -44,6 +44,14 @@ BOT_TOKEN_CURRENCY="your_currency_bot_token"
 BOT_TOKEN_TRADING="your_trading_bot_token"
 ```
 
+Quick launcher scripts:
+
+```powershell
+.\start_two_bots.ps1
+.\status_two_bots.ps1
+.\stop_two_bots.ps1
+```
+
 ### 1) Currency backend + bot
 
 ```powershell

@@ -2,6 +2,7 @@
 __pycache__/
 *.db
 *.log
+.run/
 tempCodeRunnerFile.py
 test.py
 Attached HTML and CSS Context.txt
