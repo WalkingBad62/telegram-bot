@@ -23,8 +23,8 @@ if BOT_MODE not in ("currency", "trading"):
     BOT_MODE = "currency"
 MODE_SUFFIX = BOT_MODE.upper()
 TELEGRAM_BOT_TOKEN = (
-    os.getenv("TELEGRAM_BOT_TOKEN")
-    or os.getenv(f"BOT_TOKEN_{MODE_SUFFIX}")
+    os.getenv(f"BOT_TOKEN_{MODE_SUFFIX}")
+    or os.getenv("TELEGRAM_BOT_TOKEN")
     or os.getenv("BOT_TOKEN", "")
 )
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
