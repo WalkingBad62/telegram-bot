@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import hashlib
 import sqlite3
 import os
+import subprocess
+import sys
 import re
 import requests
 from dotenv import load_dotenv
@@ -85,109 +87,34 @@ DEFAULT_CURRENCY_PAIRS = {
     "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
 }
 
-# --- Valid PocketOption asset names ---
-VALID_POCKET_OPTION_ASSETS = {
-    # ====== FOREX MAJOR ======
+# --- Common PocketOption pair suggestions (for autocomplete only, NOT enforced) ---
+POCKET_OPTION_SUGGESTIONS = sorted({
+    # Forex Major
     "EURUSD", "USDJPY", "GBPUSD", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
-    # ====== FOREX CROSS ======
+    # Forex Cross
     "EURGBP", "EURJPY", "GBPJPY", "EURAUD", "EURCHF", "EURNZD", "EURCAD",
     "GBPAUD", "GBPCAD", "GBPCHF", "GBPNZD", "AUDCAD", "AUDCHF", "AUDNZD",
     "AUDJPY", "NZDJPY", "CADJPY", "CHFJPY", "CADCHF", "NZDCAD", "NZDCHF",
-    # ====== FOREX EXOTIC ======
-    "USDNOK", "USDSEK", "USDSGD", "USDHKD", "USDTRY", "USDMXN", "USDZAR",
-    "USDPLN", "USDHUF", "USDCZK", "USDDKK", "USDILS", "USDINR", "USDTHB",
-    "USDCNH", "USDKRW", "USDTWD", "USDPHP", "USDIDR", "USDMYR", "USDCLP",
-    "USDCOP", "USDARS", "USDBRL", "USDRUB",
-    "EURPLN", "EURTRY", "EURHUF", "EURMXN", "EURNOK", "EURSEK", "EURDKK",
-    "EURSGD", "EURZAR", "EURCZK", "EURRUB",
-    "GBPTRY", "GBPNOK", "GBPSEK", "GBPSGD", "GBPZAR", "GBPPLN",
-    "CHFSGD", "CHFUSD",
-    # ====== CRYPTOCURRENCY ======
-    "BTCUSD", "ETHUSD", "LTCUSD", "BCHUSD", "EOSUSD", "XRPUSD",
-    "DOGEUSD", "SOLUSD", "ADAUSD", "DOTUSD", "SHIBUSD", "TRXUSD",
-    "LINKUSD", "AVAXUSD", "MATICUSD", "UNIUSD", "ATOMUSD", "BNBUSD", "NEOUSD",
-    "XLMUSD", "XMRUSD", "ICPUSD", "ALGOUSD", "FILUSD", "VETEUSD", "THETAUSD",
-    "FTMUSD", "ETCUSD", "MANAUSD", "SANDUSD", "AXSUSD", "APEUSD", "GALAUSD",
-    "NEARUSD", "OPUSD", "ARBUSD", "APTUSD", "SUIUSD", "PEPE1000USD", "PEPEUSD",
-    "FLOKIUSD", "BONKUSD", "WIFUSD", "TONUSD", "SEIUSD", "TIAUSD", "JUPUSD",
-    "INJUSD", "RENDERUSD", "STXUSD", "RUNEUSD", "MKRUSD", "AAVEUSD", "LDOUSD",
-    "COMPUSD", "SNXUSD", "GMTUSD", "IMXUSD", "ZILUSD", "ENJUSD", "CHZUSD",
-    "CRVUSD", "DASHUSD", "ZECUSD", "IOSTUSD", "KAVAUSD", "CELRUSD", "ONEUSD",
-    "OCEANUSD", "QNTUSD", "GRTUSD", "ROSEUSD", "BATUSD", "1INCHUSD",
-    "JASMYUSD", "WAVESUSD", "LRCUSD", "KSMUSD", "HBARUSD", "DYDXUSD",
-    "ANKRUSD", "SUSHIUSD", "YFIUSD", "BANDUSD", "STORJUSD",
-    "RVNUSD", "MINAUSD", "KABORUSD",
-    # ====== CRYPTOCURRENCY OTC (weekend trading) ======
-    "BTCUSD_OTC", "ETHUSD_OTC", "LTCUSD_OTC", "BCHUSD_OTC", "EOSUSD_OTC", "XRPUSD_OTC",
-    "DOGEUSD_OTC", "SOLUSD_OTC", "ADAUSD_OTC", "DOTUSD_OTC", "SHIBUSD_OTC", "TRXUSD_OTC",
-    "LINKUSD_OTC", "AVAXUSD_OTC", "MATICUSD_OTC", "UNIUSD_OTC", "BNBUSD_OTC", "XLMUSD_OTC",
-    "TONUSD_OTC", "NEARUSD_OTC", "ATOMUSD_OTC",
-    # ====== COMMODITIES ======
-    "XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD",
-    "USOUIL", "UKOUIL", "UKOIL", "USOIL",
-    "BRENTOIL", "WTIOIL", "CRUDEOIL",
-    "NATURALGAS", "NGAS",
-    "COPPER", "WHEAT", "CORN", "SOYBEAN", "SUGAR", "COFFEE", "COCOA", "COTTON",
-    # ====== COMMODITIES OTC ======
-    "XAUUSD_OTC", "XAGUSD_OTC",
-    "USOUIL_OTC", "UKOUIL_OTC",
-    # ====== STOCKS (PocketOption format) ======
-    # US Tech
-    "AAPL", "AMZN", "GOOG", "GOOGL", "MSFT", "TSLA", "META", "NFLX", "NVDA", "AMD",
-    "INTC", "CRM", "ADBE", "PYPL", "SQ", "SHOP", "UBER", "LYFT", "SNAP", "TWTR",
-    "PINS", "ZM", "ROKU", "SPOT", "PLTR", "RBLX", "COIN", "HOOD", "RIVN", "LCID",
-    "SOFI", "ABNB", "DOCU", "DDOG", "SNOW", "NET", "CRWD", "ZS", "MDB", "OKTA",
-    # US Blue Chip
-    "JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA", "AXP",
-    "WMT", "HD", "COST", "TGT", "LOW", "MCD", "SBUX", "NKE", "DIS", "CMCSA",
-    "JNJ", "PFE", "MRNA", "ABBV", "UNH", "LLY", "BMY", "AMGN", "GILD", "BIIB",
-    "BA", "CAT", "GE", "MMM", "HON", "UPS", "FDX", "DE",
-    "XOM", "CVX", "COP", "OXY", "SLB", "EOG",
-    "KO", "PEP", "PG", "CL", "KMB", "EL",
-    "T", "VZ", "TMUS",
-    # ====== STOCKS OTC (PocketOption OTC format) ======
-    "AAPL_OTC", "AMZN_OTC", "GOOG_OTC", "GOOGL_OTC", "MSFT_OTC", "TSLA_OTC", "META_OTC",
-    "NFLX_OTC", "BA_OTC", "INTC_OTC", "PFE_OTC", "NVDA_OTC", "AMD_OTC",
-    "APPLE_OTC", "AMAZON_OTC", "GOOGLE_OTC", "MICROSOFT_OTC", "TESLA_OTC",
-    "FACEBOOK_OTC", "ALIBABA_OTC", "MCDONALDS_OTC", "INTEL_OTC", "BOEING_OTC",
-    "NETFLIX_OTC", "NVIDIA_OTC", "TWITTER_OTC", "PFIZER_OTC", "DISNEY_OTC",
-    "COCA-COLA_OTC", "COCACOLA_OTC", "JOHNSON_OTC", "JPMORGAN_OTC", "VISA_OTC",
-    "MASTERCARD_OTC", "WALMART_OTC", "PAYPAL_OTC", "UBER_OTC", "AIRBNB_OTC",
-    "COINBASE_OTC", "PALANTIR_OTC", "SNAPCHAT_OTC", "SPOTIFY_OTC", "ZOOM_OTC",
-    "SHOPIFY_OTC", "SALESFORCE_OTC", "ADOBE_OTC",
-    "JPM_OTC", "BAC_OTC", "WFC_OTC", "GS_OTC", "V_OTC", "MA_OTC",
-    "JNJ_OTC", "KO_OTC", "PEP_OTC", "DIS_OTC", "NKE_OTC", "MCD_OTC",
-    "WMT_OTC", "HD_OTC", "XOM_OTC", "CVX_OTC", "CRM_OTC",
-    # ====== INDICES ======
-    "SPX", "NDX", "DJI", "SP500", "NASDAQ", "DOWJONES",
-    "US500", "US100", "US30", "USTEC", "US2000",
-    "UK100", "FTSE", "GER40", "DAX", "FRA40", "CAC40",
-    "EU50", "STOXX50", "SPA35", "ITA40",
-    "JPN225", "NIKKEI", "AUS200", "HK50", "HANGSENG",
-    "CHINA50", "CHINAA50", "INDIA50", "NIFTY50",
-    "RUSSELL2000", "VIX",
-    # ====== INDICES OTC ======
-    "SPX_OTC", "NDX_OTC", "DJI_OTC", "SP500_OTC", "NASDAQ_OTC",
-    "US500_OTC", "US100_OTC", "US30_OTC",
-    "UK100_OTC", "GER40_OTC", "FRA40_OTC", "JPN225_OTC", "AUS200_OTC",
-    # ====== FOREX OTC (weekend trading) ======
+    # Forex OTC
     "EURUSD_OTC", "USDJPY_OTC", "GBPUSD_OTC", "USDCHF_OTC", "AUDUSD_OTC", "USDCAD_OTC", "NZDUSD_OTC",
-    "EURGBP_OTC", "EURJPY_OTC", "GBPJPY_OTC", "EURAUD_OTC", "EURCHF_OTC", "EURNZD_OTC", "EURCAD_OTC",
+    "EURGBP_OTC", "EURJPY_OTC", "GBPJPY_OTC", "EURAUD_OTC", "EURCHF_OTC",
     "GBPAUD_OTC", "GBPCAD_OTC", "GBPCHF_OTC", "GBPNZD_OTC",
     "AUDCAD_OTC", "AUDCHF_OTC", "AUDJPY_OTC", "AUDNZD_OTC",
-    "NZDJPY_OTC", "NZDCAD_OTC",
-    "CADJPY_OTC", "CHFJPY_OTC",
-}
+    "CADJPY_OTC", "CHFJPY_OTC", "NZDJPY_OTC", "NZDCAD_OTC",
+    # Crypto
+    "BTCUSD", "ETHUSD", "LTCUSD", "XRPUSD", "EOSUSD", "BCHUSD",
+    "DOGEUSD", "SOLUSD", "ADAUSD", "DOTUSD", "SHIBUSD", "TRXUSD",
+    "LINKUSD", "AVAXUSD", "MATICUSD", "BNBUSD", "TONUSD",
+    "BTCUSD_OTC", "ETHUSD_OTC", "LTCUSD_OTC",
+    # Commodities
+    "XAUUSD", "XAGUSD", "XAUUSD_OTC", "XAGUSD_OTC",
+    # Extra
+    "CHFUSD",
+})
 
-def is_valid_pocket_option_asset(pair_name: str) -> bool:
-    """Check if a pair name is a valid PocketOption asset."""
-    normalized = pair_name.strip().upper().replace("-OTC", "_OTC")
-    if normalized in VALID_POCKET_OPTION_ASSETS:
-        return True
-    # Also check lowercase _otc variant
-    if normalized.replace("_OTC", "_otc") in VALID_POCKET_OPTION_ASSETS:
-        return True
-    return False
+# --- Signal pair test script path ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FUTURE_SIGNAL_SCRIPT = os.path.join(SCRIPT_DIR, "future_signal.py")
 
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
@@ -1094,8 +1021,58 @@ def get_signal_pairs(request: Request):
 
 @app.get("/signal-pairs/valid")
 def get_valid_pairs():
-    """Return list of all valid PocketOption asset names for client-side validation."""
-    return {"valid_pairs": sorted(VALID_POCKET_OPTION_ASSETS)}
+    """Return suggestion list for autocomplete (NOT enforced)."""
+    return {"valid_pairs": POCKET_OPTION_SUGGESTIONS}
+
+@app.post("/signal-pairs/test")
+async def test_signal_pair(request: Request):
+    """Test if a pair actually works on PocketOption by running future_signal.py."""
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    pair_name = (data.get("pair_name") or "").strip().upper()
+    if not pair_name:
+        raise HTTPException(status_code=400, detail="Pair name is required.")
+    asset_name = pair_name.replace("_OTC", "_otc")
+    cmd = [
+        sys.executable, FUTURE_SIGNAL_SCRIPT,
+        "--assets", asset_name,
+        "--timeframe", "5",
+        "--percentage", "70",
+        "--days", "1",
+        "--martingale", "0",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=90, cwd=SCRIPT_DIR
+        )
+        stderr = result.stderr.strip()
+        stdout = result.stdout.strip()
+        # Check for Invalid asset error
+        if "Invalid asset" in stderr or "Invalid asset" in stdout:
+            return {"valid": False, "error": f"'{pair_name}' is not a valid PocketOption asset."}
+        if result.returncode != 0 and not stdout:
+            err_lines = [l.strip() for l in stderr.split("\n") if l.strip()]
+            last_err = err_lines[-1] if err_lines else "Unknown error"
+            return {"valid": False, "error": last_err[:300]}
+        # Check if any signal lines exist
+        has_signals = False
+        for line in stdout.split("\n"):
+            parts = line.strip().split()
+            if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
+                has_signals = True
+                break
+            if "Total signals" in line:
+                has_signals = True
+                break
+        if has_signals:
+            return {"valid": True, "message": f"'{pair_name}' works! Signals found."}
+        else:
+            return {"valid": True, "message": f"'{pair_name}' is accepted by PocketOption but no signals right now (market may be closed)."}
+    except subprocess.TimeoutExpired:
+        return {"valid": False, "error": "Test timed out. Try again later."}
+    except Exception as e:
+        return {"valid": False, "error": str(e)[:300]}
 
 @app.post("/signal-pairs")
 async def add_signal_pair(request: Request):
@@ -1106,12 +1083,6 @@ async def add_signal_pair(request: Request):
     display_name = (data.get("display_name") or "").strip()
     if not pair_name:
         raise HTTPException(status_code=400, detail="Pair name is required.")
-    # Validate against known PocketOption assets
-    if not is_valid_pocket_option_asset(pair_name):
-        raise HTTPException(
-            status_code=400,
-            detail=f"'{pair_name}' is not a valid PocketOption asset. Please use a valid pair like EURUSD, BTCUSD, AUDCAD_OTC, etc."
-        )
     if not display_name:
         display_name = pair_name
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

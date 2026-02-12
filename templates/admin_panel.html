@@ -553,11 +553,12 @@
                 <div class="col-12 col-lg">
                     <input type="text" id="pairDisplayInput" placeholder="Display name (e.g. EURUSD_otc)" class="form-control">
                 </div>
-                <div class="col-12 col-lg-auto">
+                <div class="col-12 col-lg-auto d-flex gap-2">
+                    <button type="button" id="testPairBtn" class="btn btn-warning w-100" onclick="testPair()">🔍 Test</button>
                     <button type="submit" class="btn btn-success w-100">Add Pair</button>
                 </div>
             </form>
-            <div id="pairError" style="color: #b91c1c; font-weight: 600; margin-bottom: 10px; display: none;"></div>
+            <div id="pairError" style="font-weight: 600; margin-bottom: 10px; display: none;"></div>
             <div class="table-section">
                 <table id="pairTable" class="table table-bordered table-striped align-middle">
                     <thead>
@@ -1125,6 +1126,44 @@
         }
         loadValidPairs();
 
+        async function testPair() {
+            const pairError = document.getElementById('pairError');
+            const btn = document.getElementById('testPairBtn');
+            const pairName = document.getElementById('pairNameInput').value.trim();
+            if (!pairName) {
+                pairError.textContent = 'Enter a pair name to test.';
+                pairError.style.color = '#b91c1c';
+                pairError.style.display = 'block';
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = '⏳ Testing...';
+            pairError.textContent = 'Testing pair on PocketOption... (may take up to 60s)';
+            pairError.style.color = '#92400e';
+            pairError.style.display = 'block';
+            try {
+                const res = await fetch('/signal-pairs/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ pair_name: pairName })
+                });
+                const data = await res.json();
+                if (data.valid) {
+                    pairError.textContent = '✅ ' + (data.message || 'Pair is valid!');
+                    pairError.style.color = '#166534';
+                } else {
+                    pairError.textContent = '❌ ' + (data.error || 'Pair is not valid.');
+                    pairError.style.color = '#b91c1c';
+                }
+            } catch (err) {
+                pairError.textContent = '❌ Test failed: ' + err.message;
+                pairError.style.color = '#b91c1c';
+            }
+            pairError.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = '🔍 Test';
+        }
+
         document.getElementById('addPairForm').onsubmit = async function(e) {
             e.preventDefault();
             const pairError = document.getElementById('pairError');
@@ -1145,6 +1184,7 @@
             } else {
                 const data = await res.json();
                 pairError.textContent = data.detail || 'Error adding pair';
+                pairError.style.color = '#b91c1c';
                 pairError.style.display = 'block';
             }
         };
