@@ -546,8 +546,9 @@
                 <div class="tag" style="background: rgba(139, 92, 246, 0.12); color: #6d28d9;">Pairs</div>
             </div>
             <form id="addPairForm" class="row g-2 align-items-center mb-4">
-                <div class="col-12 col-lg">
-                    <input type="text" id="pairNameInput" placeholder="Pair name (e.g. EURUSD)" required class="form-control">
+                <div class="col-12 col-lg" style="position:relative;">
+                    <input type="text" id="pairNameInput" placeholder="Pair name (e.g. EURUSD)" required class="form-control" autocomplete="off" list="validPairsList">
+                    <datalist id="validPairsList"></datalist>
                 </div>
                 <div class="col-12 col-lg">
                     <input type="text" id="pairDisplayInput" placeholder="Display name (e.g. EURUSD_otc)" class="form-control">
@@ -556,6 +557,7 @@
                     <button type="submit" class="btn btn-success w-100">Add Pair</button>
                 </div>
             </form>
+            <div id="pairError" style="color: #b91c1c; font-weight: 600; margin-bottom: 10px; display: none;"></div>
             <div class="table-section">
                 <table id="pairTable" class="table table-bordered table-striped align-middle">
                     <thead>
@@ -1101,8 +1103,32 @@
             }
         }
 
+        // Load valid PocketOption pairs for autocomplete
+        let validPairsSet = new Set();
+        async function loadValidPairs() {
+            try {
+                const res = await fetch('/signal-pairs/valid');
+                if (res.ok) {
+                    const data = await res.json();
+                    const list = document.getElementById('validPairsList');
+                    list.innerHTML = '';
+                    (data.valid_pairs || []).forEach(p => {
+                        validPairsSet.add(p.toUpperCase());
+                        const opt = document.createElement('option');
+                        opt.value = p;
+                        list.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error('Error loading valid pairs:', e);
+            }
+        }
+        loadValidPairs();
+
         document.getElementById('addPairForm').onsubmit = async function(e) {
             e.preventDefault();
+            const pairError = document.getElementById('pairError');
+            pairError.style.display = 'none';
             const pairName = document.getElementById('pairNameInput').value.trim();
             const displayName = document.getElementById('pairDisplayInput').value.trim();
             if (!pairName) return;
@@ -1112,12 +1138,14 @@
                 body: JSON.stringify({ pair_name: pairName, display_name: displayName || pairName })
             });
             if (res.ok) {
+                pairError.style.display = 'none';
                 document.getElementById('pairNameInput').value = '';
                 document.getElementById('pairDisplayInput').value = '';
                 loadPairs();
             } else {
                 const data = await res.json();
-                alert(data.detail || 'Error adding pair');
+                pairError.textContent = data.detail || 'Error adding pair';
+                pairError.style.display = 'block';
             }
         };
         loadPairs();

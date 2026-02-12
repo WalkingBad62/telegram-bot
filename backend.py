@@ -85,6 +85,54 @@ DEFAULT_CURRENCY_PAIRS = {
     "BTCUSD": {"price": 43000.0, "link": "http://currency.com/buy/BTCUSD/"},
 }
 
+# --- Valid PocketOption asset names ---
+VALID_POCKET_OPTION_ASSETS = {
+    # Forex Major
+    "EURUSD", "USDJPY", "GBPUSD", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
+    # Forex Cross
+    "EURGBP", "EURJPY", "GBPJPY", "EURAUD", "EURCHF", "EURNZD", "EURCAD",
+    "GBPAUD", "GBPCAD", "GBPCHF", "GBPNZD", "AUDCAD", "AUDCHF", "AUDNZD",
+    "AUDJPY", "NZDJPY", "CADJPY", "CHFJPY", "CADCHF", "NZDCAD", "NZDCHF",
+    # Forex Exotic
+    "USDNOK", "USDSEK", "USDSGD", "USDHKD", "USDTRY", "USDMXN", "USDZAR",
+    "USDPLN", "USDHUF", "USDCZK", "USDDKK", "USDILS",
+    "EURPLN", "EURTRY", "EURHUF", "EURMXN", "EURNOK", "EURSEK", "EURDKK",
+    "EURSGD", "EURZAR", "EURCZK",
+    # Crypto
+    "BTCUSD", "ETHUSD", "LTCUSD", "BCHUSD", "EOSUSD", "XRPUSD",
+    "DOGEUSD", "SOLUSD", "ADAUSD", "DOTUSD", "SHIBUSD", "TRXUSD",
+    "LINKUSD", "AVAXUSD", "MATICUSD", "UNIUSD", "ATOMUSD", "BNBUSD", "NEOUSD",
+    # Commodities
+    "XAUUSD", "XAGUSD",
+    # Stocks / Indices
+    "AAPL_OTC", "AMZN_OTC", "GOOG_OTC", "MSFT_OTC", "TSLA_OTC", "META_OTC",
+    "NFLX_OTC", "BA_OTC", "INTC_OTC", "PFE_OTC",
+    "FACEBOOK_OTC", "AMAZON_OTC", "APPLE_OTC", "GOOGLE_OTC", "TESLA_OTC", "MICROSOFT_OTC",
+    "ALIBABA_OTC", "MCDONALDS_OTC", "INTEL_OTC", "BOEING_OTC",
+    # Commodities OTC  
+    "XAUUSD_OTC", "XAGUSD_OTC",
+    # Extra known pairs
+    "CHFUSD", "CHFSGD",
+    # Common PO aliases
+    "EURAUD_OTC", "EURCHF_OTC", "EURGBP_OTC", "EURJPY_OTC", "EURUSD_OTC",
+    "GBPAUD_OTC", "GBPCAD_OTC", "GBPCHF_OTC", "GBPJPY_OTC", "GBPNZD_OTC", "GBPUSD_OTC",
+    "AUDCAD_OTC", "AUDCHF_OTC", "AUDJPY_OTC", "AUDNZD_OTC", "AUDUSD_OTC",
+    "NZDJPY_OTC", "NZDUSD_OTC", "NZDCAD_OTC",
+    "USDCAD_OTC", "USDCHF_OTC", "USDJPY_OTC",
+    "CADJPY_OTC", "CHFJPY_OTC",
+    "BTCUSD_OTC", "ETHUSD_OTC", "LTCUSD_OTC",
+}
+
+def is_valid_pocket_option_asset(pair_name: str) -> bool:
+    """Check if a pair name is a valid PocketOption asset."""
+    normalized = pair_name.strip().upper().replace("-OTC", "_OTC")
+    if normalized in VALID_POCKET_OPTION_ASSETS:
+        return True
+    # Also check lowercase _otc variant
+    if normalized.replace("_OTC", "_otc") in VALID_POCKET_OPTION_ASSETS:
+        return True
+    return False
+
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
 
@@ -988,6 +1036,11 @@ def get_signal_pairs(request: Request):
         {"id": r[0], "pair_name": r[1], "display_name": r[2], "active": bool(r[3]), "sort_order": r[4]} for r in rows
     ]}
 
+@app.get("/signal-pairs/valid")
+def get_valid_pairs():
+    """Return list of all valid PocketOption asset names for client-side validation."""
+    return {"valid_pairs": sorted(VALID_POCKET_OPTION_ASSETS)}
+
 @app.post("/signal-pairs")
 async def add_signal_pair(request: Request):
     require_login(request)
@@ -997,6 +1050,12 @@ async def add_signal_pair(request: Request):
     display_name = (data.get("display_name") or "").strip()
     if not pair_name:
         raise HTTPException(status_code=400, detail="Pair name is required.")
+    # Validate against known PocketOption assets
+    if not is_valid_pocket_option_asset(pair_name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{pair_name}' is not a valid PocketOption asset. Please use a valid pair like EURUSD, BTCUSD, AUDCAD_OTC, etc."
+        )
     if not display_name:
         display_name = pair_name
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
