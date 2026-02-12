@@ -224,6 +224,12 @@
             border: 1px solid rgba(148, 163, 184, 0.6);
             padding: 6px 10px;
         }
+        #pairTable input[type="text"] {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            padding: 6px 10px;
+        }
         .reply-actions {
             display: inline-flex;
             align-items: center;
@@ -275,6 +281,52 @@
         #replyTable button:focus-visible {
             outline: 2px solid rgba(37, 99, 235, 0.35);
             outline-offset: 2px;
+        }
+        #pairTable button {
+            border-radius: 999px;
+            font-weight: 600;
+            padding: 6px 14px;
+            border: 1px solid transparent;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+        }
+        #pairTable button.btn-save {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(59, 130, 246, 0.22));
+            color: #1d4ed8;
+            border-color: rgba(37, 99, 235, 0.3);
+        }
+        #pairTable button.btn-save:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+        }
+        #pairTable button.btn-delete {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(248, 113, 113, 0.2));
+            color: #b91c1c;
+            border-color: rgba(239, 68, 68, 0.25);
+        }
+        #pairTable button.btn-delete:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(239, 68, 68, 0.18);
+        }
+        #pairTable button.btn-move {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.14), rgba(167, 139, 250, 0.2));
+            color: #5b21b6;
+            border-color: rgba(139, 92, 246, 0.25);
+            padding: 6px 10px;
+            min-width: 32px;
+            justify-content: center;
+        }
+        #pairTable button.btn-move:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(139, 92, 246, 0.18);
+        }
+        .pair-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
         .confirm-modal .modal-content {
             border-radius: 18px;
@@ -483,6 +535,34 @@
                         <tbody></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
+                    <h2>Signal Pairs Manager</h2>
+                    <div class="muted">Add, edit, or remove currency pairs shown in /futuresignal and /currencycoveter.</div>
+                </div>
+                <div class="tag" style="background: rgba(139, 92, 246, 0.12); color: #6d28d9;">Pairs</div>
+            </div>
+            <form id="addPairForm" class="row g-2 align-items-center mb-4">
+                <div class="col-12 col-lg">
+                    <input type="text" id="pairNameInput" placeholder="Pair name (e.g. EURUSD)" required class="form-control">
+                </div>
+                <div class="col-12 col-lg">
+                    <input type="text" id="pairDisplayInput" placeholder="Display name (e.g. EURUSD_otc)" class="form-control">
+                </div>
+                <div class="col-12 col-lg-auto">
+                    <button type="submit" class="btn btn-success w-100">Add Pair</button>
+                </div>
+            </form>
+            <div class="table-section">
+                <table id="pairTable" class="table table-bordered table-striped align-middle">
+                    <thead>
+                        <tr><th>#</th><th>Pair Name</th><th>Display Name</th><th>Active</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </div>
         <div class="panel-card mt-4">
@@ -869,6 +949,179 @@
             }
         }
         loadUsers();
+
+        // ================= SIGNAL PAIRS MANAGER =================
+        async function loadPairs() {
+            try {
+                const res = await fetch('/signal-pairs');
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                const tbody = document.getElementById('pairTable').querySelector('tbody');
+                tbody.innerHTML = '';
+                const pairs = data.pairs || [];
+                pairs.forEach((p, idx) => {
+                    const tr = document.createElement('tr');
+
+                    // # column (sort order)
+                    const tdNum = document.createElement('td');
+                    tdNum.textContent = idx + 1;
+                    tdNum.style.fontWeight = '600';
+                    tdNum.style.textAlign = 'center';
+                    tdNum.style.width = '50px';
+                    tr.appendChild(tdNum);
+
+                    // Pair Name
+                    const tdName = document.createElement('td');
+                    const inputName = document.createElement('input');
+                    inputName.type = 'text';
+                    inputName.value = p.pair_name;
+                    inputName.className = 'form-control';
+                    tdName.appendChild(inputName);
+                    tr.appendChild(tdName);
+
+                    // Display Name
+                    const tdDisplay = document.createElement('td');
+                    const inputDisplay = document.createElement('input');
+                    inputDisplay.type = 'text';
+                    inputDisplay.value = p.display_name;
+                    inputDisplay.className = 'form-control';
+                    tdDisplay.appendChild(inputDisplay);
+                    tr.appendChild(tdDisplay);
+
+                    // Active
+                    const tdActive = document.createElement('td');
+                    tdActive.style.textAlign = 'center';
+                    const inputActive = document.createElement('input');
+                    inputActive.type = 'checkbox';
+                    inputActive.checked = p.active;
+                    tdActive.appendChild(inputActive);
+                    tr.appendChild(tdActive);
+
+                    // Actions
+                    const tdAct = document.createElement('td');
+                    const actionWrap = document.createElement('div');
+                    actionWrap.className = 'pair-actions';
+
+                    // Move Up
+                    const upBtn = document.createElement('button');
+                    upBtn.className = 'btn-move';
+                    upBtn.innerHTML = '&#9650;';
+                    upBtn.title = 'Move up';
+                    upBtn.disabled = idx === 0;
+                    upBtn.onclick = async () => {
+                        if (idx === 0) return;
+                        const prevPair = pairs[idx - 1];
+                        const curOrder = p.sort_order;
+                        const prevOrder = prevPair.sort_order;
+                        await Promise.all([
+                            fetch(`/signal-pairs/${p.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                                body: JSON.stringify({ pair_name: p.pair_name, display_name: p.display_name, active: p.active ? 1 : 0, sort_order: prevOrder })
+                            }),
+                            fetch(`/signal-pairs/${prevPair.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                                body: JSON.stringify({ pair_name: prevPair.pair_name, display_name: prevPair.display_name, active: prevPair.active ? 1 : 0, sort_order: curOrder })
+                            })
+                        ]);
+                        loadPairs();
+                    };
+                    actionWrap.appendChild(upBtn);
+
+                    // Move Down
+                    const downBtn = document.createElement('button');
+                    downBtn.className = 'btn-move';
+                    downBtn.innerHTML = '&#9660;';
+                    downBtn.title = 'Move down';
+                    downBtn.disabled = idx === pairs.length - 1;
+                    downBtn.onclick = async () => {
+                        if (idx === pairs.length - 1) return;
+                        const nextPair = pairs[idx + 1];
+                        const curOrder = p.sort_order;
+                        const nextOrder = nextPair.sort_order;
+                        await Promise.all([
+                            fetch(`/signal-pairs/${p.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                                body: JSON.stringify({ pair_name: p.pair_name, display_name: p.display_name, active: p.active ? 1 : 0, sort_order: nextOrder })
+                            }),
+                            fetch(`/signal-pairs/${nextPair.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                                body: JSON.stringify({ pair_name: nextPair.pair_name, display_name: nextPair.display_name, active: nextPair.active ? 1 : 0, sort_order: curOrder })
+                            })
+                        ]);
+                        loadPairs();
+                    };
+                    actionWrap.appendChild(downBtn);
+
+                    // Save
+                    const saveBtn = document.createElement('button');
+                    saveBtn.className = 'btn-save';
+                    saveBtn.innerHTML = '<span class="btn-text">Save</span>';
+                    saveBtn.onclick = async () => {
+                        const res = await fetch(`/signal-pairs/${p.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                            body: JSON.stringify({
+                                pair_name: inputName.value.trim(),
+                                display_name: inputDisplay.value.trim(),
+                                active: inputActive.checked ? 1 : 0
+                            })
+                        });
+                        if (res.ok) loadPairs();
+                    };
+                    actionWrap.appendChild(saveBtn);
+
+                    // Delete
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'btn-delete';
+                    delBtn.innerHTML = '<span class="btn-text">Delete</span>';
+                    delBtn.onclick = async () => {
+                        if (!confirm(`Delete pair "${p.pair_name}"?`)) return;
+                        await fetch(`/signal-pairs/${p.id}`, {
+                            method: 'DELETE',
+                            headers: { 'X-CSRF-Token': csrfToken }
+                        });
+                        loadPairs();
+                    };
+                    actionWrap.appendChild(delBtn);
+
+                    tdAct.appendChild(actionWrap);
+                    tr.appendChild(tdAct);
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error('Error loading pairs:', e);
+            }
+        }
+
+        document.getElementById('addPairForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const pairName = document.getElementById('pairNameInput').value.trim();
+            const displayName = document.getElementById('pairDisplayInput').value.trim();
+            if (!pairName) return;
+            const res = await fetch('/signal-pairs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ pair_name: pairName, display_name: displayName || pairName })
+            });
+            if (res.ok) {
+                document.getElementById('pairNameInput').value = '';
+                document.getElementById('pairDisplayInput').value = '';
+                loadPairs();
+            } else {
+                const data = await res.json();
+                alert(data.detail || 'Error adding pair');
+            }
+        };
+        loadPairs();
+
         document.getElementById('unifiedAllUsers').onchange = function() {
             document.getElementById('unifiedUserSelect').disabled = this.checked;
         };

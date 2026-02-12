@@ -148,6 +148,16 @@ def init_db():
                 updated_at TEXT
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS signal_pairs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pair_name TEXT UNIQUE NOT NULL,
+                display_name TEXT NOT NULL,
+                active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        ''')
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("start_message", DEFAULT_START_MESSAGE)
@@ -163,6 +173,23 @@ def init_db():
                 "VALUES (?, ?, ?, ?)",
                 (pair, info["price"], info["link"], now)
             )
+        # Seed default signal pairs if table is empty
+        c.execute("SELECT COUNT(*) FROM signal_pairs")
+        if c.fetchone()[0] == 0:
+            default_signal_pairs = [
+                ("EURUSD", "EURUSD", 1),
+                ("USDJPY", "USDJPY", 2),
+                ("AUDCAD", "AUDCAD", 3),
+                ("CHFUSD", "CHFUSD", 4),
+                ("AUDCAD_OTC", "AUDCAD_otc", 5),
+                ("BTCUSD", "BTCUSD", 6),
+            ]
+            for pair_name, display_name, sort_order in default_signal_pairs:
+                c.execute(
+                    "INSERT OR IGNORE INTO signal_pairs (pair_name, display_name, active, sort_order, created_at) "
+                    "VALUES (?, ?, 1, ?, ?)",
+                    (pair_name, display_name, sort_order, now)
+                )
         conn.commit()
 
 init_db()
@@ -949,6 +976,82 @@ async def send_message(request: Request, user_id: int = Form(...), message: str 
             return {"error": resp.text}
     except Exception as e:
         return {"error": str(e)}
+
+# --- Signal Pairs CRUD ---
+@app.get("/signal-pairs")
+def get_signal_pairs(request: Request):
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, pair_name, display_name, active, sort_order FROM signal_pairs ORDER BY sort_order ASC, id ASC")
+        rows = c.fetchall()
+    return {"pairs": [
+        {"id": r[0], "pair_name": r[1], "display_name": r[2], "active": bool(r[3]), "sort_order": r[4]} for r in rows
+    ]}
+
+@app.post("/signal-pairs")
+async def add_signal_pair(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    pair_name = (data.get("pair_name") or "").strip().upper()
+    display_name = (data.get("display_name") or "").strip()
+    if not pair_name:
+        raise HTTPException(status_code=400, detail="Pair name is required.")
+    if not display_name:
+        display_name = pair_name
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("SELECT MAX(sort_order) FROM signal_pairs")
+        max_order = c.fetchone()[0] or 0
+        try:
+            c.execute(
+                "INSERT INTO signal_pairs (pair_name, display_name, active, sort_order, created_at) VALUES (?, ?, 1, ?, ?)",
+                (pair_name, display_name, max_order + 1, now)
+            )
+            conn.commit()
+            rid = c.lastrowid
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="Pair already exists.")
+    return {"id": rid, "pair_name": pair_name, "display_name": display_name, "active": True, "sort_order": max_order + 1}
+
+@app.put("/signal-pairs/{pair_id}")
+async def edit_signal_pair(pair_id: int, request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    pair_name = (data.get("pair_name") or "").strip().upper()
+    display_name = (data.get("display_name") or "").strip()
+    active = int(data.get("active", 1))
+    sort_order = data.get("sort_order")
+    if not pair_name:
+        raise HTTPException(status_code=400, detail="Pair name is required.")
+    if not display_name:
+        display_name = pair_name
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        if sort_order is not None:
+            c.execute(
+                "UPDATE signal_pairs SET pair_name=?, display_name=?, active=?, sort_order=? WHERE id=?",
+                (pair_name, display_name, active, int(sort_order), pair_id)
+            )
+        else:
+            c.execute(
+                "UPDATE signal_pairs SET pair_name=?, display_name=?, active=? WHERE id=?",
+                (pair_name, display_name, active, pair_id)
+            )
+        conn.commit()
+    return {"id": pair_id, "pair_name": pair_name, "display_name": display_name, "active": bool(active)}
+
+@app.delete("/signal-pairs/{pair_id}")
+def delete_signal_pair(pair_id: int, request: Request):
+    require_login(request)
+    require_csrf(request)
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM signal_pairs WHERE id=?", (pair_id,))
+        conn.commit()
+    return {"ok": True}
 
 # --- Serve Admin Panel (Protected) ---
 @app.get("/admin")

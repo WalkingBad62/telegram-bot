@@ -57,7 +57,33 @@ CURRENCY_PAIR_CHOICES = {
 }
 CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 
-def display_pair_name(pair: str) -> str:
+def fetch_signal_pairs():
+    """Fetch signal pairs from backend. Returns (choices_dict, display_dict, valid_set) or fallback defaults."""
+    try:
+        res = requests.get(f"{BACKEND_URL}/signal-pairs", timeout=5)
+        if res.status_code == 200:
+            pairs = res.json().get("pairs", [])
+            active_pairs = [p for p in pairs if p.get("active", True)]
+            if active_pairs:
+                choices = {}
+                display = {}
+                valid = set()
+                for i, p in enumerate(active_pairs, 1):
+                    pair_name = p["pair_name"]
+                    disp_name = p.get("display_name", pair_name)
+                    choices[str(i)] = pair_name
+                    if disp_name != pair_name:
+                        display[pair_name] = disp_name
+                    valid.add(pair_name)
+                return choices, display, valid
+    except Exception:
+        pass
+    # Fallback to hardcoded
+    return CURRENCY_PAIR_CHOICES, CURRENCY_PAIR_DISPLAY, set(CURRENCY_PAIRS.keys())
+
+def display_pair_name(pair: str, display_map=None) -> str:
+    if display_map:
+        return display_map.get(pair, pair)
     return CURRENCY_PAIR_DISPLAY.get(pair, pair)
 
 def build_default_start_message(mode: str) -> str:
@@ -355,14 +381,31 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
         if result.returncode != 0:
             logging.error(f"future_signal.py error (rc={result.returncode}): {error_output}")
             if not output:
-                return f"Script error: {error_output[:500]}" if error_output else "Script failed with no output."
+                # Show meaningful error to user
+                if error_output:
+                    # Extract last meaningful error line
+                    err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
+                    last_err = err_lines[-1] if err_lines else error_output[:300]
+                    return f"⚠️ Signal generation failed for this pair.\n\nError: {last_err[:300]}"
+                return "⚠️ Signal generation failed. This pair may not be supported."
 
         # Filter out non-signal lines (keep only signal lines + total)
         lines = output.split("\n")
         signal_lines = []
+        # Known noise lines to skip
+        skip_phrases = [
+            "list created successfully",
+            "cataloger schedules signals",
+            "schedule at",
+            "Signals will always be available",
+            "hours in the future",
+        ]
         for line in lines:
             line = line.strip()
             if not line:
+                continue
+            # Skip known noise/warning lines
+            if any(phrase in line for phrase in skip_phrases):
                 continue
             # Signal lines look like: "EURUSD M5 14:30 CALL"
             # Also keep "Total signals:" and "No signals found"
@@ -371,15 +414,18 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                 signal_lines.append(f"📊 {line}")
             elif "Total signals" in line or "No signals found" in line:
                 signal_lines.append(f"\n{line}")
-            elif "list created successfully" in line:
-                continue  # skip this internal message
+            # All other lines are skipped (noise)
 
         if signal_lines:
             header = f"🔮 Future Signals for {pair} (M{timeframe})\n{'━' * 30}\n"
             return header + "\n".join(signal_lines)
-        elif output:
-            return output[:3000]
         else:
+            # No valid signal lines found
+            logging.warning(f"No signal lines parsed for {pair} M{timeframe}. Raw output: {output[:300]}. Stderr: {error_output[:200]}")
+            if error_output:
+                err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
+                last_err = err_lines[-1] if err_lines else error_output[:300]
+                return f"⚠️ No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
             return ""
 
     except asyncio.TimeoutError:
@@ -436,8 +482,12 @@ async def imageai(update, context):
 # ================= CURRENCY CONVERTER COMMAND =================
 async def currencycoveter(update, context):
     await store_user(update)
+    choices, display, valid = fetch_signal_pairs()
+    context.user_data["_pair_choices"] = choices
+    context.user_data["_pair_display"] = display
+    context.user_data["_pair_valid"] = valid
     pair_list = "\n".join(
-        f"{k}. {display_pair_name(v)}" for k, v in CURRENCY_PAIR_CHOICES.items()
+        f"{k}. {display_pair_name(v, display)}" for k, v in choices.items()
     )
     context.user_data[AWAIT_CURRENCY_KEY] = True
     await update.message.reply_text(
@@ -447,8 +497,12 @@ async def currencycoveter(update, context):
 # ================= FUTURE SIGNAL COMMAND =================
 async def futuresignal(update, context):
     await store_user(update)
+    choices, display, valid = fetch_signal_pairs()
+    context.user_data["_pair_choices"] = choices
+    context.user_data["_pair_display"] = display
+    context.user_data["_pair_valid"] = valid
     pair_list = "\n".join(
-        f"{k}. {display_pair_name(v)}" for k, v in CURRENCY_PAIR_CHOICES.items()
+        f"{k}. {display_pair_name(v, display)}" for k, v in choices.items()
     )
     context.user_data[AWAIT_FUTURESIGNAL_PAIR_KEY] = True
     await update.message.reply_text(
@@ -481,14 +535,17 @@ async def normal_message(update, context):
     # --- Future Signal: pair selection ---
     if context.user_data.get(AWAIT_FUTURESIGNAL_PAIR_KEY):
         raw = (update.message.text or "").strip().upper()
-        pair = CURRENCY_PAIR_CHOICES.get(raw, raw)
-        if pair in CURRENCY_PAIRS:
+        choices = context.user_data.get("_pair_choices", CURRENCY_PAIR_CHOICES)
+        display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
+        valid = context.user_data.get("_pair_valid", set(CURRENCY_PAIRS.keys()))
+        pair = choices.get(raw, raw)
+        if pair in valid:
             context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
             context.user_data["futuresignal_pair"] = pair
             context.user_data[AWAIT_FUTURESIGNAL_TIMEFRAME_KEY] = True
             await update.message.reply_text("Enter the timeframe (1, 2, 5, 15, 30, 60)")
         else:
-            pair_names = ", ".join(display_pair_name(p) for p in CURRENCY_PAIRS)
+            pair_names = ", ".join(display_pair_name(p, display) for p in valid)
             await update.message.reply_text(
                 f"Invalid pair. Please choose one of:\n{pair_names}"
             )
@@ -512,7 +569,14 @@ async def normal_message(update, context):
                 for chunk in split_message(signal_output, 4000):
                     await update.message.reply_text(chunk)
             else:
-                await update.message.reply_text("No signals found or script error. Please try again later.")
+                await update.message.reply_text(
+                    f"⚠️ No signals found for {display_pair_name(pair)} (M{timeframe}).\n\n"
+                    "Possible reasons:\n"
+                    "• This pair may not be supported on the platform\n"
+                    "• Market may be closed right now\n"
+                    "• Not enough data to generate signals\n\n"
+                    "Try with a different pair or timeframe."
+                )
         else:
             await update.message.reply_text("Invalid timeframe. Please enter: 1, 2, 5, 15, 30, or 60")
         return
@@ -520,14 +584,17 @@ async def normal_message(update, context):
     # --- Currency Converter: pair selection ---
     if context.user_data.get(AWAIT_CURRENCY_KEY):
         raw = (update.message.text or "").strip().upper()
-        pair = CURRENCY_PAIR_CHOICES.get(raw, raw)
-        if pair in CURRENCY_PAIRS:
+        choices = context.user_data.get("_pair_choices", CURRENCY_PAIR_CHOICES)
+        display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
+        valid = context.user_data.get("_pair_valid", set(CURRENCY_PAIRS.keys()))
+        pair = choices.get(raw, raw)
+        if pair in valid:
             context.user_data.pop(AWAIT_CURRENCY_KEY, None)
             context.user_data["selected_pair"] = pair
             context.user_data[AWAIT_TIMEFRAME_KEY] = True
             await update.message.reply_text("Enter the timeframe (1, 2, 5, 15, 30, 60)")
         else:
-            pair_names = ", ".join(display_pair_name(p) for p in CURRENCY_PAIRS)
+            pair_names = ", ".join(display_pair_name(p, display) for p in valid)
             await update.message.reply_text(
                 f"Invalid pair. Please choose one of:\n{pair_names}"
             )
