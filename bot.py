@@ -1,4 +1,4 @@
-from telegram.ext import (
+﻿from telegram.ext import (
     ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler,
     filters
 )
@@ -58,7 +58,7 @@ BTN_EDIT_DESCRIPTION_PICTURE = "Edit Description Picture"
 BTN_EDIT_BOTPIC = "Edit Botpic"
 BTN_EDIT_COMMANDS = "Edit Commands"
 BTN_EDIT_PRIVACY_POLICY = "Edit Privacy Policy"
-BTN_BACK_TO_BOT = "« Back to Bot"
+BTN_BACK_TO_BOT = "Â« Back to Bot"
 
 CB_EDIT_NAME = "botpanel:edit_name"
 CB_EDIT_ABOUT = "botpanel:edit_about"
@@ -76,6 +76,9 @@ START_BTN_CONTACT = "Contact Support"
 CB_START_FUTURE_SIGNAL = "startmenu:futuresignal"
 CB_START_YOOAI = "startmenu:yooai"
 CB_START_CONTACT = "startmenu:contact"
+
+CB_FUTURESIGNAL_PAIR_PREFIX = "futuresignal:pair:"
+CB_FUTURESIGNAL_TIMEFRAME_PREFIX = "futuresignal:tf:"
 
 BOT_SETTINGS_STATE_KEYS = (
     AWAIT_BOT_NAME_KEY,
@@ -434,8 +437,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     # Extract last meaningful error line
                     err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                     last_err = err_lines[-1] if err_lines else error_output[:300]
-                    return f"⚠️ Signal generation failed for this pair.\n\nError: {last_err[:300]}"
-                return "⚠️ Signal generation failed. This pair may not be supported."
+                    return f"âš ï¸ Signal generation failed for this pair.\n\nError: {last_err[:300]}"
+                return "âš ï¸ Signal generation failed. This pair may not be supported."
 
         # Filter out non-signal lines (keep only signal lines + total)
         lines = output.split("\n")
@@ -459,13 +462,13 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # Also keep "Total signals:" and "No signals found"
             parts = line.split()
             if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
-                signal_lines.append(f"📊 {line}")
+                signal_lines.append(f"ðŸ“Š {line}")
             elif "Total signals" in line or "No signals found" in line:
                 signal_lines.append(f"\n{line}")
             # All other lines are skipped (noise)
 
         if signal_lines:
-            header = f"🔮 Future Signals for {pair} (M{timeframe})\n{'━' * 30}\n"
+            header = f"ðŸ”® Future Signals for {pair} (M{timeframe})\n{'â”' * 30}\n"
             return header + "\n".join(signal_lines)
         else:
             # No valid signal lines found
@@ -473,15 +476,15 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             if error_output:
                 err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                 last_err = err_lines[-1] if err_lines else error_output[:300]
-                return f"⚠️ No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
+                return f"âš ï¸ No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
             return ""
 
     except asyncio.TimeoutError:
         logging.error("future_signal.py timed out")
-        return "⚠️ Signal generation timed out. Please try again."
+        return "âš ï¸ Signal generation timed out. Please try again."
     except Exception as e:
         logging.error(f"future_signal.py exception: {e}")
-        return f"⚠️ Error running signal script: {str(e)[:200]}"
+        return f"âš ï¸ Error running signal script: {str(e)[:200]}"
 
 
 def split_message(text: str, max_length: int = 4000) -> list:
@@ -509,6 +512,66 @@ def start_menu_keyboard():
             [InlineKeyboardButton(START_BTN_CONTACT, callback_data=CB_START_CONTACT)],
         ]
     )
+
+def futuresignal_pair_keyboard(choices, display):
+    ordered_pairs = []
+    for k, pair in choices.items():
+        rank = int(k) if str(k).isdigit() else 10_000
+        ordered_pairs.append((rank, str(k), pair))
+    ordered_pairs.sort(key=lambda item: (item[0], item[1]))
+
+    rows = []
+    current_row = []
+    for _, _, pair in ordered_pairs:
+        label = display_pair_name(pair, display)
+        current_row.append(
+            InlineKeyboardButton(
+                label,
+                callback_data=f"{CB_FUTURESIGNAL_PAIR_PREFIX}{pair}",
+            )
+        )
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+    return InlineKeyboardMarkup(rows)
+
+def futuresignal_timeframe_keyboard(pair: str):
+    rows = []
+    current_row = []
+    for tf in ("1", "2", "5", "15", "30", "60"):
+        current_row.append(
+            InlineKeyboardButton(
+                f"M{tf}",
+                callback_data=f"{CB_FUTURESIGNAL_TIMEFRAME_PREFIX}{pair}:{tf}",
+            )
+        )
+        if len(current_row) == 3:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+    return InlineKeyboardMarkup(rows)
+
+async def send_futuresignal_result(message, pair: str, timeframe: int, display=None):
+    await message.reply_text(
+        f"\u23f3 Generating signals for {display_pair_name(pair, display)} (M{timeframe})...\n"
+        "This may take 30-60 seconds. Please wait."
+    )
+    signal_output = await run_future_signal_script(pair, timeframe)
+    if signal_output:
+        for chunk in split_message(signal_output, 4000):
+            await message.reply_text(chunk)
+    else:
+        await message.reply_text(
+            f"Ã¢Å¡Â Ã¯Â¸Â No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
+            "Possible reasons:\n"
+            "Ã¢â‚¬Â¢ This pair may not be supported on the platform\n"
+            "Ã¢â‚¬Â¢ Market may be closed right now\n"
+            "Ã¢â‚¬Â¢ Not enough data to generate signals\n\n"
+            "Try with a different pair or timeframe."
+        )
 
 def bot_settings_keyboard():
     return InlineKeyboardMarkup(
@@ -581,7 +644,7 @@ async def remove_menu(app):
 # ================= SAWA COMMAND =================
 async def sawa(update, context):
     await store_user(update)
-    await update.message.reply_text("Sawa! 😄")
+    await update.message.reply_text("Sawa! ðŸ˜„")
 
 # ================= AIDI COMMAND =================
 async def aidi(update, context):
@@ -615,12 +678,10 @@ async def start_menu_callback(update, context):
         context.user_data["_pair_choices"] = choices
         context.user_data["_pair_display"] = display
         context.user_data["_pair_valid"] = valid
-        pair_list = "\n".join(
-            f"{k}. {display_pair_name(v, display)}" for k, v in choices.items()
-        )
         context.user_data[AWAIT_FUTURESIGNAL_PAIR_KEY] = True
         await query.message.reply_text(
-            f"Please Choose a Pair for Signal\n\n{pair_list}"
+            "Please Choose a Pair for Signal",
+            reply_markup=futuresignal_pair_keyboard(choices, display),
         )
         return
 
@@ -634,6 +695,56 @@ async def start_menu_callback(update, context):
             "Support option is not configured yet. Please contact @YOO_SUPPORT1."
         )
         return
+
+async def futuresignal_callback(update, context):
+    query = update.callback_query
+    if not query:
+        return
+    data = query.data or ""
+
+    if data.startswith(CB_FUTURESIGNAL_PAIR_PREFIX):
+        raw_pair = data[len(CB_FUTURESIGNAL_PAIR_PREFIX):].strip().upper()
+        choices, display, valid = fetch_signal_pairs()
+        context.user_data["_pair_choices"] = choices
+        context.user_data["_pair_display"] = display
+        context.user_data["_pair_valid"] = valid
+        if raw_pair not in valid:
+            await query.answer("Pair unavailable", show_alert=True)
+            return
+        context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
+        context.user_data["futuresignal_pair"] = raw_pair
+        context.user_data[AWAIT_FUTURESIGNAL_TIMEFRAME_KEY] = True
+        await query.answer()
+        if query.message:
+            await query.message.reply_text(
+                f"Pair selected: {display_pair_name(raw_pair, display)}\nChoose timeframe:",
+                reply_markup=futuresignal_timeframe_keyboard(raw_pair),
+            )
+        return
+
+    if data.startswith(CB_FUTURESIGNAL_TIMEFRAME_PREFIX):
+        payload = data[len(CB_FUTURESIGNAL_TIMEFRAME_PREFIX):]
+        pair_part, sep, tf = payload.rpartition(":")
+        pair = pair_part.strip().upper() if sep else ""
+        tf = tf.strip()
+        choices, display, valid = fetch_signal_pairs()
+        context.user_data["_pair_choices"] = choices
+        context.user_data["_pair_display"] = display
+        context.user_data["_pair_valid"] = valid
+        if pair not in valid:
+            await query.answer("Pair unavailable", show_alert=True)
+            return
+        if tf not in VALID_TIMEFRAMES:
+            await query.answer("Invalid timeframe", show_alert=True)
+            return
+        context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
+        context.user_data.pop("futuresignal_pair", None)
+        await query.answer()
+        if query.message:
+            await send_futuresignal_result(query.message, pair, int(tf), display)
+        return
+
+    await query.answer()
 
 # ================= BOT PANEL =================
 async def botpanel(update, context):
@@ -721,12 +832,10 @@ async def futuresignal(update, context):
     context.user_data["_pair_choices"] = choices
     context.user_data["_pair_display"] = display
     context.user_data["_pair_valid"] = valid
-    pair_list = "\n".join(
-        f"{k}. {display_pair_name(v, display)}" for k, v in choices.items()
-    )
     context.user_data[AWAIT_FUTURESIGNAL_PAIR_KEY] = True
     await update.message.reply_text(
-        f"Please Choose a Pair for Signal\n\n{pair_list}"
+        "Please Choose a Pair for Signal",
+        reply_markup=futuresignal_pair_keyboard(choices, display),
     )
 
 # ================= STORE USER =================
@@ -837,7 +946,10 @@ async def normal_message(update, context):
             context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
             context.user_data["futuresignal_pair"] = pair
             context.user_data[AWAIT_FUTURESIGNAL_TIMEFRAME_KEY] = True
-            await update.message.reply_text("Enter the timeframe (1, 2, 5, 15, 30, 60)")
+            await update.message.reply_text(
+                f"Pair selected: {display_pair_name(pair, display)}\nChoose timeframe:",
+                reply_markup=futuresignal_timeframe_keyboard(pair),
+            )
         else:
             pair_names = ", ".join(display_pair_name(p, display) for p in valid)
             await update.message.reply_text(
@@ -852,25 +964,9 @@ async def normal_message(update, context):
             context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
             pair = context.user_data.pop("futuresignal_pair", "EURUSD")
             timeframe = int(raw)
-            await update.message.reply_text(
-                f"\u23f3 Generating signals for {display_pair_name(pair)} (M{timeframe})...\n"
-                "This may take 30-60 seconds. Please wait."
-            )
-            # Run future_signal.py as subprocess
-            signal_output = await run_future_signal_script(pair, timeframe)
-            if signal_output:
-                # Split long output into chunks (Telegram max 4096 chars)
-                for chunk in split_message(signal_output, 4000):
-                    await update.message.reply_text(chunk)
-            else:
-                await update.message.reply_text(
-                    f"⚠️ No signals found for {display_pair_name(pair)} (M{timeframe}).\n\n"
-                    "Possible reasons:\n"
-                    "• This pair may not be supported on the platform\n"
-                    "• Market may be closed right now\n"
-                    "• Not enough data to generate signals\n\n"
-                    "Try with a different pair or timeframe."
-                )
+            display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
+            await send_futuresignal_result(update.message, pair, timeframe, display)
+            return
         else:
             await update.message.reply_text("Invalid timeframe. Please enter: 1, 2, 5, 15, 30, or 60")
         return
@@ -1001,7 +1097,7 @@ async def user_media_handler(update, context):
 async def add_command(update, context):
     await store_user(update)
     if not is_admin(update.message.from_user.id):
-        await update.message.reply_text("❌ Admin only")
+        await update.message.reply_text("âŒ Admin only")
         return
 
     if len(context.args) < 2:
@@ -1012,7 +1108,7 @@ async def add_command(update, context):
     reply = " ".join(context.args[1:])
     custom_commands[cmd] = reply
 
-    await update.message.reply_text(f"✅ /{cmd} added")
+    await update.message.reply_text(f"âœ… /{cmd} added")
 
 # ================= COMMAND ROUTER =================
 async def command_router(update, context):
@@ -1026,7 +1122,7 @@ async def command_router(update, context):
     if cmd in custom_commands:
         await update.message.reply_text(custom_commands[cmd])
     else:
-        await update.message.reply_text("❓ Unknown command")
+        await update.message.reply_text("â“ Unknown command")
 
 # ================= FETCH USERS =================
 def get_users():
@@ -1043,7 +1139,7 @@ async def retarget_all(update, context):
         return
 
     context.user_data["retarget_all"] = True
-    await update.message.reply_text("📢 Now send message / image / video")
+    await update.message.reply_text("ðŸ“¢ Now send message / image / video")
 
 # ================= RETARGET ONE =================
 async def retarget_user(update, context):
@@ -1052,11 +1148,11 @@ async def retarget_user(update, context):
         return
 
     if not context.args:
-        await update.message.reply_text("❌ User ID dao")
+        await update.message.reply_text("âŒ User ID dao")
         return
 
     context.user_data["retarget_user"] = int(context.args[0])
-    await update.message.reply_text("🎯 Target set.\nNow send message / image / video")
+    await update.message.reply_text("ðŸŽ¯ Target set.\nNow send message / image / video")
 
 # ================= ADMIN MEDIA HANDLER =================
 async def admin_media_handler(update, context):
@@ -1066,14 +1162,14 @@ async def admin_media_handler(update, context):
     if "retarget_user" in context.user_data:
         uid = context.user_data.pop("retarget_user")
         await forward_any(update, context, [uid])
-        await update.message.reply_text("✅ Retarget sent")
+        await update.message.reply_text("âœ… Retarget sent")
         return
 
     if "retarget_all" in context.user_data:
         context.user_data.pop("retarget_all")
         users = get_users()
         await forward_any(update, context, users)
-        await update.message.reply_text("✅ Broadcast done")
+        await update.message.reply_text("âœ… Broadcast done")
 
 # ================= FORWARD ANY =================
 async def forward_any(update, context, users):
@@ -1106,7 +1202,7 @@ async def forward_any(update, context, users):
 # ================= APP =================
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.post_init = remove_menu  # 🔥 MENU HIDDEN HERE
+app.post_init = remove_menu  # ðŸ”¥ MENU HIDDEN HERE
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("add", add_command))
@@ -1121,6 +1217,7 @@ app.add_handler(CommandHandler("futuresignal", futuresignal))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 app.add_handler(CommandHandler("botpanel", botpanel))
 app.add_handler(CallbackQueryHandler(start_menu_callback, pattern=r"^startmenu:"))
+app.add_handler(CallbackQueryHandler(futuresignal_callback, pattern=r"^futuresignal:"))
 app.add_handler(CallbackQueryHandler(botpanel_callback, pattern=r"^botpanel:"))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))
@@ -1130,5 +1227,5 @@ app.add_handler(MessageHandler(
     user_media_handler
 ))
 
-print("🤖 Bot running...")
+print("ðŸ¤– Bot running...")
 app.run_polling()
