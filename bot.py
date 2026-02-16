@@ -1,7 +1,8 @@
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
+    ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler,
     filters
 )
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import RetryAfter
 from datetime import datetime
 import asyncio
@@ -37,7 +38,42 @@ AWAIT_CURRENCY_KEY = "await_currency_pair"
 AWAIT_TIMEFRAME_KEY = "await_timeframe"
 AWAIT_FUTURESIGNAL_PAIR_KEY = "await_futuresignal_pair"
 AWAIT_FUTURESIGNAL_TIMEFRAME_KEY = "await_futuresignal_timeframe"
+AWAIT_BOT_NAME_KEY = "await_bot_name"
+AWAIT_BOT_ABOUT_KEY = "await_bot_about"
+AWAIT_BOT_DESCRIPTION_KEY = "await_bot_description"
+AWAIT_BOT_COMMANDS_KEY = "await_bot_commands"
+AWAIT_BOT_PRIVACY_POLICY_KEY = "await_bot_privacy_policy"
+AWAIT_BOTPIC_KEY = "await_botpic"
+AWAIT_DESCRIPTION_PICTURE_KEY = "await_description_picture"
 VALID_TIMEFRAMES = {"1", "2", "5", "15", "30", "60"}
+
+BTN_EDIT_NAME = "Edit Name"
+BTN_EDIT_ABOUT = "Edit About"
+BTN_EDIT_DESCRIPTION = "Edit Description"
+BTN_EDIT_DESCRIPTION_PICTURE = "Edit Description Picture"
+BTN_EDIT_BOTPIC = "Edit Botpic"
+BTN_EDIT_COMMANDS = "Edit Commands"
+BTN_EDIT_PRIVACY_POLICY = "Edit Privacy Policy"
+BTN_BACK_TO_BOT = "« Back to Bot"
+
+CB_EDIT_NAME = "botpanel:edit_name"
+CB_EDIT_ABOUT = "botpanel:edit_about"
+CB_EDIT_DESCRIPTION = "botpanel:edit_description"
+CB_EDIT_DESCRIPTION_PICTURE = "botpanel:edit_description_picture"
+CB_EDIT_BOTPIC = "botpanel:edit_botpic"
+CB_EDIT_COMMANDS = "botpanel:edit_commands"
+CB_EDIT_PRIVACY_POLICY = "botpanel:edit_privacy_policy"
+CB_BACK_TO_BOT = "botpanel:back"
+
+BOT_SETTINGS_STATE_KEYS = (
+    AWAIT_BOT_NAME_KEY,
+    AWAIT_BOT_ABOUT_KEY,
+    AWAIT_BOT_DESCRIPTION_KEY,
+    AWAIT_BOT_COMMANDS_KEY,
+    AWAIT_BOT_PRIVACY_POLICY_KEY,
+    AWAIT_BOTPIC_KEY,
+    AWAIT_DESCRIPTION_PICTURE_KEY,
+)
 
 CURRENCY_PAIRS = {
     "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
@@ -453,6 +489,70 @@ def split_message(text: str, max_length: int = 4000) -> list:
         text = text[split_at:].lstrip("\n")
     return chunks
 
+def bot_settings_keyboard():
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(BTN_EDIT_NAME, callback_data=CB_EDIT_NAME),
+                InlineKeyboardButton(BTN_EDIT_ABOUT, callback_data=CB_EDIT_ABOUT),
+            ],
+            [
+                InlineKeyboardButton(BTN_EDIT_DESCRIPTION, callback_data=CB_EDIT_DESCRIPTION),
+                InlineKeyboardButton(BTN_EDIT_DESCRIPTION_PICTURE, callback_data=CB_EDIT_DESCRIPTION_PICTURE),
+            ],
+            [
+                InlineKeyboardButton(BTN_EDIT_BOTPIC, callback_data=CB_EDIT_BOTPIC),
+                InlineKeyboardButton(BTN_EDIT_COMMANDS, callback_data=CB_EDIT_COMMANDS),
+            ],
+            [
+                InlineKeyboardButton(BTN_EDIT_PRIVACY_POLICY, callback_data=CB_EDIT_PRIVACY_POLICY),
+                InlineKeyboardButton(BTN_BACK_TO_BOT, callback_data=CB_BACK_TO_BOT),
+            ],
+        ]
+    )
+
+def clear_bot_settings_state(context):
+    for key in BOT_SETTINGS_STATE_KEYS:
+        context.user_data.pop(key, None)
+
+def set_bot_settings_state(context, key):
+    clear_bot_settings_state(context)
+    context.user_data[key] = True
+
+def parse_bot_commands(text: str):
+    commands = []
+    seen = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("/"):
+            line = line[1:]
+        if " - " in line:
+            cmd, desc = line.split(" - ", 1)
+        elif ":" in line:
+            cmd, desc = line.split(":", 1)
+        else:
+            parts = line.split(maxsplit=1)
+            if len(parts) != 2:
+                return None
+            cmd, desc = parts
+        cmd = cmd.strip().lower()
+        desc = desc.strip()
+        if not cmd or not desc:
+            return None
+        if len(cmd) > 32 or not cmd.replace("_", "").isalnum():
+            return None
+        if cmd in seen:
+            continue
+        seen.add(cmd)
+        commands.append(BotCommand(cmd, desc[:256]))
+    return commands
+
+def is_valid_http_url(url: str) -> bool:
+    value = (url or "").strip().lower()
+    return value.startswith("http://") or value.startswith("https://")
+
 # ================= REMOVE MENU =================
 async def remove_menu(app):
     await app.bot.set_my_commands([])
@@ -472,6 +572,64 @@ async def aidi(update, context):
 async def start(update, context):
     await store_user(update)
     await update.message.reply_text(fetch_start_message())
+
+# ================= BOT PANEL =================
+async def botpanel(update, context):
+    await store_user(update)
+    if not is_admin(update.message.from_user.id):
+        await update.message.reply_text("Admin only")
+        return
+    clear_bot_settings_state(context)
+    await update.message.reply_text(
+        "Bot settings panel opened. Choose an option.",
+        reply_markup=bot_settings_keyboard(),
+    )
+
+async def botpanel_callback(update, context):
+    query = update.callback_query
+    if not query:
+        return
+
+    if not is_admin(query.from_user.id):
+        await query.answer("Admin only", show_alert=True)
+        return
+
+    data = query.data or ""
+    if data == CB_BACK_TO_BOT:
+        clear_bot_settings_state(context)
+        await query.answer("Back to bot")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
+    prompt_map = {
+        CB_EDIT_NAME: (AWAIT_BOT_NAME_KEY, "OK. Send me the new bot name."),
+        CB_EDIT_ABOUT: (AWAIT_BOT_ABOUT_KEY, "OK. Send me the new about text."),
+        CB_EDIT_DESCRIPTION: (AWAIT_BOT_DESCRIPTION_KEY, "OK. Send me the new description."),
+        CB_EDIT_DESCRIPTION_PICTURE: (AWAIT_DESCRIPTION_PICTURE_KEY, "OK. Send me the new description picture."),
+        CB_EDIT_BOTPIC: (AWAIT_BOTPIC_KEY, "OK. Send me the new profile photo for the bot."),
+        CB_EDIT_COMMANDS: (
+            AWAIT_BOT_COMMANDS_KEY,
+            "Send commands as lines. Example:\n"
+            "/start - Start bot\n"
+            "/help - Help text\n\n"
+            "Send 'clear' to remove all commands."
+        ),
+        CB_EDIT_PRIVACY_POLICY: (AWAIT_BOT_PRIVACY_POLICY_KEY, "Send the privacy policy URL (http:// or https://)."),
+    }
+
+    flow = prompt_map.get(data)
+    if not flow:
+        await query.answer()
+        return
+
+    state_key, prompt = flow
+    set_bot_settings_state(context, state_key)
+    await query.answer()
+    if query.message:
+        await query.message.reply_text(prompt)
 
 # ================= IMAGEAI COMMAND =================
 async def imageai(update, context):
@@ -525,6 +683,7 @@ async def store_user(update):
 # ================= NORMAL MESSAGE =================
 async def normal_message(update, context):
     await store_user(update)
+    text = (update.message.text or "").strip()
 
     # Admin retarget: forward text to target users
     if is_admin(update.message.from_user.id):
@@ -532,9 +691,82 @@ async def normal_message(update, context):
             await admin_media_handler(update, context)
             return
 
+        if context.user_data.get(AWAIT_BOT_NAME_KEY):
+            name = text[:64]
+            if not name:
+                await update.message.reply_text("Name cannot be empty. Send a valid bot name.")
+                return
+            try:
+                await context.bot.set_my_name(name=name)
+                context.user_data.pop(AWAIT_BOT_NAME_KEY, None)
+                await update.message.reply_text(f"Done. New bot name: {name}")
+            except Exception as e:
+                await update.message.reply_text(f"Failed to update name: {str(e)[:200]}")
+            return
+
+        if context.user_data.get(AWAIT_BOT_ABOUT_KEY):
+            about = text[:120]
+            if not about:
+                await update.message.reply_text("About text cannot be empty.")
+                return
+            try:
+                await context.bot.set_my_short_description(short_description=about)
+                context.user_data.pop(AWAIT_BOT_ABOUT_KEY, None)
+                await update.message.reply_text("Done. About text updated.")
+            except Exception as e:
+                await update.message.reply_text(f"Failed to update about text: {str(e)[:200]}")
+            return
+
+        if context.user_data.get(AWAIT_BOT_DESCRIPTION_KEY):
+            description = text[:512]
+            if not description:
+                await update.message.reply_text("Description cannot be empty.")
+                return
+            try:
+                await context.bot.set_my_description(description=description)
+                context.user_data.pop(AWAIT_BOT_DESCRIPTION_KEY, None)
+                await update.message.reply_text("Done. Description updated.")
+            except Exception as e:
+                await update.message.reply_text(f"Failed to update description: {str(e)[:200]}")
+            return
+
+        if context.user_data.get(AWAIT_BOT_COMMANDS_KEY):
+            if text.lower() == "clear":
+                try:
+                    await context.bot.set_my_commands([])
+                    context.user_data.pop(AWAIT_BOT_COMMANDS_KEY, None)
+                    await update.message.reply_text("Done. Commands cleared.")
+                except Exception as e:
+                    await update.message.reply_text(f"Failed to clear commands: {str(e)[:200]}")
+                return
+            commands = parse_bot_commands(text)
+            if not commands:
+                await update.message.reply_text(
+                    "Invalid format. Example:\n"
+                    "/start - Start bot\n"
+                    "/help - Help text"
+                )
+                return
+            try:
+                await context.bot.set_my_commands(commands)
+                context.user_data.pop(AWAIT_BOT_COMMANDS_KEY, None)
+                await update.message.reply_text(f"Done. {len(commands)} command(s) updated.")
+            except Exception as e:
+                await update.message.reply_text(f"Failed to update commands: {str(e)[:200]}")
+            return
+
+        if context.user_data.get(AWAIT_BOT_PRIVACY_POLICY_KEY):
+            if not is_valid_http_url(text):
+                await update.message.reply_text("Invalid URL. Please send http:// or https:// link.")
+                return
+            context.bot_data["privacy_policy_url"] = text
+            context.user_data.pop(AWAIT_BOT_PRIVACY_POLICY_KEY, None)
+            await update.message.reply_text(f"Done. Privacy Policy URL saved:\n{text}")
+            return
+
     # --- Future Signal: pair selection ---
     if context.user_data.get(AWAIT_FUTURESIGNAL_PAIR_KEY):
-        raw = (update.message.text or "").strip().upper()
+        raw = text.upper()
         choices = context.user_data.get("_pair_choices", CURRENCY_PAIR_CHOICES)
         display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
         valid = context.user_data.get("_pair_valid", set(CURRENCY_PAIRS.keys()))
@@ -553,7 +785,7 @@ async def normal_message(update, context):
 
     # --- Future Signal: timeframe selection ---
     if context.user_data.get(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY):
-        raw = (update.message.text or "").strip()
+        raw = text
         if raw in VALID_TIMEFRAMES:
             context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
             pair = context.user_data.pop("futuresignal_pair", "EURUSD")
@@ -583,7 +815,7 @@ async def normal_message(update, context):
 
     # --- Currency Converter: pair selection ---
     if context.user_data.get(AWAIT_CURRENCY_KEY):
-        raw = (update.message.text or "").strip().upper()
+        raw = text.upper()
         choices = context.user_data.get("_pair_choices", CURRENCY_PAIR_CHOICES)
         display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
         valid = context.user_data.get("_pair_valid", set(CURRENCY_PAIRS.keys()))
@@ -602,7 +834,7 @@ async def normal_message(update, context):
 
     # --- Currency Converter: timeframe selection ---
     if context.user_data.get(AWAIT_TIMEFRAME_KEY):
-        raw = (update.message.text or "").strip()
+        raw = text
         if raw in VALID_TIMEFRAMES:
             context.user_data.pop(AWAIT_TIMEFRAME_KEY, None)
             pair = context.user_data.pop("selected_pair", "EURUSD")
@@ -627,7 +859,7 @@ async def normal_message(update, context):
     try:
         res = requests.post(
             f"{BACKEND_URL}/reply/get",
-            json={"text": update.message.text},
+            json={"text": text},
             timeout=5
         )
         if res.status_code == 200:
@@ -648,6 +880,28 @@ async def user_media_handler(update, context):
     if is_admin(update.message.from_user.id):
         if "retarget_user" in context.user_data or "retarget_all" in context.user_data:
             await admin_media_handler(update, context)
+            return
+
+        if context.user_data.get(AWAIT_BOTPIC_KEY):
+            context.user_data.pop(AWAIT_BOTPIC_KEY, None)
+            if update.message.photo:
+                await update.message.reply_text(
+                    "Telegram Bot API cannot update bot profile photo directly.\n"
+                    "Use @BotFather -> /mybots -> Edit Bot -> Edit Botpic."
+                )
+            else:
+                await update.message.reply_text("Please send a photo.")
+            return
+
+        if context.user_data.get(AWAIT_DESCRIPTION_PICTURE_KEY):
+            context.user_data.pop(AWAIT_DESCRIPTION_PICTURE_KEY, None)
+            if update.message.photo:
+                await update.message.reply_text(
+                    "Telegram Bot API cannot update description picture directly.\n"
+                    "Use @BotFather -> /mybots -> Edit Bot."
+                )
+            else:
+                await update.message.reply_text("Please send a photo.")
             return
 
     if context.user_data.get(AWAIT_IMAGEAI_KEY):
@@ -704,7 +958,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "yooai", "currencycoveter", "futuresignal"]:
+    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "yooai", "currencycoveter", "futuresignal", "botpanel"]:
         return
 
     if cmd in custom_commands:
@@ -803,6 +1057,8 @@ app.add_handler(CommandHandler("gajaai", imageai))
 app.add_handler(CommandHandler("yooai", imageai))
 app.add_handler(CommandHandler("futuresignal", futuresignal))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
+app.add_handler(CommandHandler("botpanel", botpanel))
+app.add_handler(CallbackQueryHandler(botpanel_callback, pattern=r"^botpanel:"))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, normal_message))
