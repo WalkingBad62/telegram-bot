@@ -23,6 +23,10 @@ if BOT_MODE not in ("currency", "trading"):
     BOT_MODE = "currency"
 MODE_SUFFIX = BOT_MODE.upper()
 TOKEN = os.getenv(f"BOT_TOKEN_{MODE_SUFFIX}") or os.getenv("BOT_TOKEN")
+try:
+    IMAGEAI_TIMEOUT = float(os.getenv("IMAGEAI_TIMEOUT", "35"))
+except ValueError:
+    IMAGEAI_TIMEOUT = 35.0
 
 # ================= ADMIN =================
 ADMIN_IDS = [8544013336]
@@ -224,7 +228,7 @@ def format_money(value):
 def fetch_imageai_price(file_bytes, filename):
     try:
         files = {"file": (filename, file_bytes)}
-        res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=10)
+        res = requests.post(f"{BACKEND_URL}/gajaai/price", files=files, timeout=IMAGEAI_TIMEOUT)
         if res.status_code == 200:
             return res.json()
         try:
@@ -366,7 +370,10 @@ def build_ai_reply(data):
     if not isinstance(data, dict):
         return "Image processed, but response format is invalid."
     if "error" in data:
-        return f"Error: {data.get('error')}"
+        err = str(data.get("error"))
+        if "502 Bad Gateway" in err or "Trading API returned 502" in err:
+            return "Trading analysis server is temporarily busy. Please try again in a moment."
+        return f"Error: {err}"
     if data.get("mode") == "trading" or "analysis" in data:
         analysis = data.get("analysis")
         if analysis is None:
