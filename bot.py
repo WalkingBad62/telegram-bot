@@ -65,6 +65,14 @@ CB_EDIT_COMMANDS = "botpanel:edit_commands"
 CB_EDIT_PRIVACY_POLICY = "botpanel:edit_privacy_policy"
 CB_BACK_TO_BOT = "botpanel:back"
 
+START_BTN_FUTURE_SIGNAL = "Generate Future Signal"
+START_BTN_YOOAI = "YOOAI Prediction"
+START_BTN_CONTACT = "Contact Support"
+
+CB_START_FUTURE_SIGNAL = "startmenu:futuresignal"
+CB_START_YOOAI = "startmenu:yooai"
+CB_START_CONTACT = "startmenu:contact"
+
 BOT_SETTINGS_STATE_KEYS = (
     AWAIT_BOT_NAME_KEY,
     AWAIT_BOT_ABOUT_KEY,
@@ -138,9 +146,6 @@ def build_default_start_message(mode: str) -> str:
             "RUSSIAN LINK\U0001f1f7\U0001f1fa\nhttps://tinyurl.com/twExSavageRU\n"
             "2. Send me your Pocket Option ID to verify.\n"
             "3. Get added to the Private Couching Room instantly.\n\n"
-            "You can use this following feature:\n\n"
-            "1. Future Signal: /futuresignal\n"
-            "2. YooAI: /yooai\n\n"
             "CONTACT TRADERS @YOO_SUPPORT1"
         )
     return (
@@ -489,6 +494,15 @@ def split_message(text: str, max_length: int = 4000) -> list:
         text = text[split_at:].lstrip("\n")
     return chunks
 
+def start_menu_keyboard():
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(START_BTN_FUTURE_SIGNAL, callback_data=CB_START_FUTURE_SIGNAL)],
+            [InlineKeyboardButton(START_BTN_YOOAI, callback_data=CB_START_YOOAI)],
+            [InlineKeyboardButton(START_BTN_CONTACT, callback_data=CB_START_CONTACT)],
+        ]
+    )
+
 def bot_settings_keyboard():
     return InlineKeyboardMarkup(
         [
@@ -571,7 +585,48 @@ async def aidi(update, context):
 # ================= START =================
 async def start(update, context):
     await store_user(update)
-    await update.message.reply_text(fetch_start_message())
+    if BOT_MODE == "trading":
+        await update.message.reply_text(
+            DEFAULT_START_MESSAGE,
+            reply_markup=start_menu_keyboard(),
+        )
+    else:
+        await update.message.reply_text(fetch_start_message())
+
+async def start_menu_callback(update, context):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    await query.answer()
+    if not query.message:
+        return
+
+    if data == CB_START_FUTURE_SIGNAL:
+        choices, display, valid = fetch_signal_pairs()
+        context.user_data["_pair_choices"] = choices
+        context.user_data["_pair_display"] = display
+        context.user_data["_pair_valid"] = valid
+        pair_list = "\n".join(
+            f"{k}. {display_pair_name(v, display)}" for k, v in choices.items()
+        )
+        context.user_data[AWAIT_FUTURESIGNAL_PAIR_KEY] = True
+        await query.message.reply_text(
+            f"Please Choose a Pair for Signal\n\n{pair_list}"
+        )
+        return
+
+    if data == CB_START_YOOAI:
+        context.user_data[AWAIT_IMAGEAI_KEY] = True
+        await query.message.reply_text("Please Upload your image")
+        return
+
+    if data == CB_START_CONTACT:
+        await query.message.reply_text(
+            "Support option is not configured yet. Please contact @YOO_SUPPORT1."
+        )
+        return
 
 # ================= BOT PANEL =================
 async def botpanel(update, context):
@@ -1058,6 +1113,7 @@ app.add_handler(CommandHandler("yooai", imageai))
 app.add_handler(CommandHandler("futuresignal", futuresignal))
 app.add_handler(CommandHandler("currencycoveter", currencycoveter))
 app.add_handler(CommandHandler("botpanel", botpanel))
+app.add_handler(CallbackQueryHandler(start_menu_callback, pattern=r"^startmenu:"))
 app.add_handler(CallbackQueryHandler(botpanel_callback, pattern=r"^botpanel:"))
 
 app.add_handler(MessageHandler(filters.COMMAND, command_router))
