@@ -375,7 +375,7 @@ def build_ai_reply(data):
         analysis = data.get("analysis")
         if analysis is None:
             analysis = data
-        return build_trading_summary(analysis)
+        return f"Hey Yoo! Details ready- *\n\n{build_trading_summary(analysis)}"
     currency = data.get("currency", "USD")
     price = format_money(data.get("price", ""))
     discount = format_money(data.get("discount", ""))
