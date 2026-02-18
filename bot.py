@@ -335,9 +335,6 @@ def build_trading_summary(analysis):
     pattern_text = pattern if pattern else "N/A"
     chart_type = title_text(get_ci(analysis, "chart_type"))
     chart_type_text = chart_type if chart_type else "N/A"
-    entry = get_ci(analysis, "entry_price")
-    take_profit = get_ci(analysis, "take_profit_price")
-    stop_loss = get_ci(analysis, "stop_loss_price")
     support = get_ci(analysis, "support_zone_price")
     resistance = get_ci(analysis, "resistance_zone_price")
 
@@ -348,9 +345,6 @@ def build_trading_summary(analysis):
         f"Signal Strength: {strength_text}",
         f"Chart Pattern: {pattern_text}",
         f"Chart Type: {chart_type_text}",
-        f"Entry Price: {format_analysis_price(entry) if is_present(entry) else 'N/A'}",
-        f"Take Profit Price: {format_analysis_price(take_profit) if is_present(take_profit) else 'N/A'}",
-        f"Stop Loss Price: {format_analysis_price(stop_loss) if is_present(stop_loss) else 'N/A'}",
         f"Support Zone Price: {format_analysis_price(support) if is_present(support) else 'N/A'}",
         f"Resistance Zone Price: {format_analysis_price(resistance) if is_present(resistance) else 'N/A'}",
     ]
