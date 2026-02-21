@@ -137,6 +137,21 @@ def display_pair_name(pair: str, display_map=None) -> str:
         return display_map.get(pair, pair)
     return CURRENCY_PAIR_DISPLAY.get(pair, pair)
 
+def fix_mojibake(text: str) -> str:
+    """Recover common UTF-8 text decoded as Windows-1252/Latin-1."""
+    if not text:
+        return text
+    if not any(marker in text for marker in ("Ã", "Â", "â", "ðŸ")):
+        return text
+    for src_enc in ("cp1252", "latin-1"):
+        try:
+            fixed = text.encode(src_enc).decode("utf-8")
+            if fixed and fixed != text:
+                return fixed
+        except UnicodeError:
+            continue
+    return text
+
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
         return (
@@ -413,6 +428,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=120,
                     cwd=SCRIPT_DIR,
                 )
@@ -420,8 +437,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             timeout=130,
         )
 
-        output = result.stdout.strip()
-        error_output = result.stderr.strip()
+        output = fix_mojibake(result.stdout).strip()
+        error_output = fix_mojibake(result.stderr).strip()
 
         if result.returncode != 0:
             logging.error(f"future_signal.py error (rc={result.returncode}): {error_output}")
@@ -446,7 +463,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             "hours in the future",
         ]
         for line in lines:
-            line = line.strip()
+            line = fix_mojibake(line).strip()
             if not line:
                 continue
             # Skip known noise/warning lines
@@ -454,11 +471,15 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                 continue
             # Signal lines look like: "EURUSD M5 14:30 CALL"
             # Also keep "Total signals:" and "No signals found"
-            parts = line.split()
+            normalized = line
+            for prefix in ("\U0001F4CA", "ðŸ“Š", "-", "\u2022"):
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):].strip()
+            parts = normalized.split()
             if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
-                signal_lines.append(f"\U0001F4CA {line}")
+                signal_lines.append(f"\U0001F4CA {normalized}")
             elif "Total signals" in line or "No signals found" in line:
-                signal_lines.append(f"\n{line}")
+                signal_lines.append(f"\n{normalized}")
             # All other lines are skipped (noise)
 
         if signal_lines:
@@ -555,8 +576,8 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
     )
     signal_output = await run_future_signal_script(pair, timeframe)
     if signal_output:
-        for chunk in split_message(signal_output, 4000):
-            await message.reply_text(chunk)
+        for chunk in split_message(fix_mojibake(signal_output), 4000):
+            await message.reply_text(fix_mojibake(chunk))
     else:
         await message.reply_text(
             f"\u26A0\uFE0F No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
