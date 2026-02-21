@@ -10,6 +10,7 @@ import ast
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import requests
@@ -451,9 +452,17 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     return f"\u26A0\uFE0F Signal generation failed for this pair.\n\nError: {last_err[:300]}"
                 return "\u26A0\uFE0F Signal generation failed. This pair may not be supported."
 
-        # Filter out non-signal lines (keep only signal lines + total)
+        # Build a clean, canonical message from parsed signal rows only.
+        signal_pattern = re.compile(
+            r"([A-Za-z][A-Za-z0-9_]*)\s+M(\d{1,3})\s+([0-2]\d:[0-5]\d)\s+(CALL|PUT)\b",
+            re.IGNORECASE,
+        )
+        total_pattern = re.compile(r"Total\s+signals\s*:\s*(\d+)", re.IGNORECASE)
+
+        # Filter out non-signal lines (keep only parsed signal rows + total)
         lines = output.split("\n")
         signal_lines = []
+        reported_total = None
         # Known noise lines to skip
         skip_phrases = [
             "list created successfully",
@@ -469,22 +478,26 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # Skip known noise/warning lines
             if any(phrase in line for phrase in skip_phrases):
                 continue
-            # Signal lines look like: "EURUSD M5 14:30 CALL"
-            # Also keep "Total signals:" and "No signals found"
-            normalized = line
-            for prefix in ("\U0001F4CA", "ðŸ“Š", "-", "\u2022"):
-                if normalized.startswith(prefix):
-                    normalized = normalized[len(prefix):].strip()
-            parts = normalized.split()
-            if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
-                signal_lines.append(f"\U0001F4CA {normalized}")
-            elif "Total signals" in line or "No signals found" in line:
-                signal_lines.append(f"\n{normalized}")
-            # All other lines are skipped (noise)
+            # Parse signal row from anywhere in the line; ignore broken prefixes.
+            m_signal = signal_pattern.search(line)
+            if m_signal:
+                asset, tf, hhmm, direction = m_signal.groups()
+                signal_lines.append(f"\U0001F4CA {asset} M{tf} {hhmm} {direction.upper()}")
+                continue
+
+            m_total = total_pattern.search(line)
+            if m_total:
+                reported_total = int(m_total.group(1))
+                continue
+
+            if "No signals found" in line:
+                return f"\u26A0\uFE0F No signals found for {display_pair_name(pair)}."
+            # All other lines are skipped as noise.
 
         if signal_lines:
             header = f"\U0001F52E Future Signals for {pair} (M{timeframe})\n{'\u2501' * 30}\n"
-            return header + "\n".join(signal_lines)
+            total_text = f"\n\nTotal signals: {reported_total if reported_total is not None else len(signal_lines)}"
+            return header + "\n".join(signal_lines) + total_text
         else:
             # No valid signal lines found
             logging.warning(f"No signal lines parsed for {pair} M{timeframe}. Raw output: {output[:300]}. Stderr: {error_output[:200]}")
