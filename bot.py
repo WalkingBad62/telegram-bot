@@ -58,7 +58,7 @@ BTN_EDIT_DESCRIPTION_PICTURE = "Edit Description Picture"
 BTN_EDIT_BOTPIC = "Edit Botpic"
 BTN_EDIT_COMMANDS = "Edit Commands"
 BTN_EDIT_PRIVACY_POLICY = "Edit Privacy Policy"
-BTN_BACK_TO_BOT = "Â« Back to Bot"
+BTN_BACK_TO_BOT = "<< Back to Bot"
 
 CB_EDIT_NAME = "botpanel:edit_name"
 CB_EDIT_ABOUT = "botpanel:edit_about"
@@ -431,8 +431,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     # Extract last meaningful error line
                     err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                     last_err = err_lines[-1] if err_lines else error_output[:300]
-                    return f"âš ï¸ Signal generation failed for this pair.\n\nError: {last_err[:300]}"
-                return "âš ï¸ Signal generation failed. This pair may not be supported."
+                    return f"[!] Signal generation failed for this pair.\n\nError: {last_err[:300]}"
+                return "[!] Signal generation failed. This pair may not be supported."
 
         # Filter out non-signal lines (keep only signal lines + total)
         lines = output.split("\n")
@@ -456,13 +456,13 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # Also keep "Total signals:" and "No signals found"
             parts = line.split()
             if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
-                signal_lines.append(f"ðŸ“Š {line}")
+                signal_lines.append(f"- {line}")
             elif "Total signals" in line or "No signals found" in line:
                 signal_lines.append(f"\n{line}")
             # All other lines are skipped (noise)
 
         if signal_lines:
-            header = f"ðŸ”® Future Signals for {pair} (M{timeframe})\n{'â”' * 30}\n"
+            header = f"Future Signals for {pair} (M{timeframe})\n{'-' * 30}\n"
             return header + "\n".join(signal_lines)
         else:
             # No valid signal lines found
@@ -470,15 +470,15 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             if error_output:
                 err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                 last_err = err_lines[-1] if err_lines else error_output[:300]
-                return f"âš ï¸ No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
+                return f"[!] No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
             return ""
 
     except asyncio.TimeoutError:
         logging.error("future_signal.py timed out")
-        return "âš ï¸ Signal generation timed out. Please try again."
+        return "[!] Signal generation timed out. Please try again."
     except Exception as e:
         logging.error(f"future_signal.py exception: {e}")
-        return f"âš ï¸ Error running signal script: {str(e)[:200]}"
+        return f"[!] Error running signal script: {str(e)[:200]}"
 
 
 def split_message(text: str, max_length: int = 4000) -> list:
@@ -559,11 +559,11 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
             await message.reply_text(chunk)
     else:
         await message.reply_text(
-            f"Ã¢Å¡Â Ã¯Â¸Â No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
+            f"[!] No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
             "Possible reasons:\n"
-            "Ã¢â‚¬Â¢ This pair may not be supported on the platform\n"
-            "Ã¢â‚¬Â¢ Market may be closed right now\n"
-            "Ã¢â‚¬Â¢ Not enough data to generate signals\n\n"
+            "- This pair may not be supported on the platform\n"
+            "- Market may be closed right now\n"
+            "- Not enough data to generate signals\n\n"
             "Try with a different pair or timeframe."
         )
 
@@ -638,7 +638,7 @@ async def remove_menu(app):
 # ================= SAWA COMMAND =================
 async def sawa(update, context):
     await store_user(update)
-    await update.message.reply_text("Sawa! ðŸ˜„")
+    await update.message.reply_text("Sawa!")
 
 # ================= AIDI COMMAND =================
 async def aidi(update, context):
@@ -1091,7 +1091,7 @@ async def user_media_handler(update, context):
 async def add_command(update, context):
     await store_user(update)
     if not is_admin(update.message.from_user.id):
-        await update.message.reply_text("âŒ Admin only")
+        await update.message.reply_text("Admin only")
         return
 
     if len(context.args) < 2:
@@ -1102,7 +1102,7 @@ async def add_command(update, context):
     reply = " ".join(context.args[1:])
     custom_commands[cmd] = reply
 
-    await update.message.reply_text(f"âœ… /{cmd} added")
+    await update.message.reply_text(f"[OK] /{cmd} added")
 
 # ================= COMMAND ROUTER =================
 async def command_router(update, context):
@@ -1116,7 +1116,7 @@ async def command_router(update, context):
     if cmd in custom_commands:
         await update.message.reply_text(custom_commands[cmd])
     else:
-        await update.message.reply_text("â“ Unknown command")
+        await update.message.reply_text("Unknown command")
 
 # ================= FETCH USERS =================
 def get_users():
@@ -1133,7 +1133,7 @@ async def retarget_all(update, context):
         return
 
     context.user_data["retarget_all"] = True
-    await update.message.reply_text("ðŸ“¢ Now send message / image / video")
+    await update.message.reply_text("Now send message / image / video")
 
 # ================= RETARGET ONE =================
 async def retarget_user(update, context):
@@ -1142,11 +1142,11 @@ async def retarget_user(update, context):
         return
 
     if not context.args:
-        await update.message.reply_text("âŒ User ID dao")
+        await update.message.reply_text("User ID dao")
         return
 
     context.user_data["retarget_user"] = int(context.args[0])
-    await update.message.reply_text("ðŸŽ¯ Target set.\nNow send message / image / video")
+    await update.message.reply_text("Target set.\nNow send message / image / video")
 
 # ================= ADMIN MEDIA HANDLER =================
 async def admin_media_handler(update, context):
@@ -1156,14 +1156,14 @@ async def admin_media_handler(update, context):
     if "retarget_user" in context.user_data:
         uid = context.user_data.pop("retarget_user")
         await forward_any(update, context, [uid])
-        await update.message.reply_text("âœ… Retarget sent")
+        await update.message.reply_text("[OK] Retarget sent")
         return
 
     if "retarget_all" in context.user_data:
         context.user_data.pop("retarget_all")
         users = get_users()
         await forward_any(update, context, users)
-        await update.message.reply_text("âœ… Broadcast done")
+        await update.message.reply_text("[OK] Broadcast done")
 
 # ================= FORWARD ANY =================
 async def forward_any(update, context, users):
@@ -1196,7 +1196,7 @@ async def forward_any(update, context, users):
 # ================= APP =================
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.post_init = remove_menu  # ðŸ”¥ MENU HIDDEN HERE
+app.post_init = remove_menu  # MENU HIDDEN HERE
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("add", add_command))
@@ -1221,5 +1221,5 @@ app.add_handler(MessageHandler(
     user_media_handler
 ))
 
-print("ðŸ¤– Bot running...")
+print("Bot running...")
 app.run_polling()
