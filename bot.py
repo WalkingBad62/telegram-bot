@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 # ================= ENV =================
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8002")
 BOT_MODE = (os.getenv("BOT_MODE", "currency") or "currency").strip().lower()
 if BOT_MODE not in ("currency", "trading"):
     BOT_MODE = "currency"
@@ -109,28 +109,56 @@ CURRENCY_PAIR_CHOICES = {
 }
 CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 
+def iter_backend_urls() -> list[str]:
+    """Return candidate backend base URLs in priority order (deduplicated)."""
+    candidates = [
+        (BACKEND_URL or "").strip(),
+        os.getenv("BACKEND_URL_ALT", "").strip(),
+        "http://127.0.0.1:8002",
+        "http://127.0.0.1:8000",
+        "http://localhost:8002",
+        "http://localhost:8000",
+    ]
+    seen = set()
+    ordered = []
+    for url in candidates:
+        if not url:
+            continue
+        cleaned = url.rstrip("/")
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        ordered.append(cleaned)
+    return ordered
+
 def fetch_signal_pairs():
     """Fetch signal pairs from backend. Returns (choices_dict, display_dict, valid_set) or fallback defaults."""
-    try:
-        res = requests.get(f"{BACKEND_URL}/signal-pairs", timeout=5)
-        if res.status_code == 200:
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/signal-pairs", timeout=5)
+            if res.status_code != 200:
+                logging.warning(f"/signal-pairs returned {res.status_code} from {base_url}")
+                continue
             pairs = res.json().get("pairs", [])
             active_pairs = [p for p in pairs if p.get("active", True)]
-            if active_pairs:
-                choices = {}
-                display = {}
-                valid = set()
-                for i, p in enumerate(active_pairs, 1):
-                    pair_name = p["pair_name"]
-                    disp_name = p.get("display_name", pair_name)
-                    choices[str(i)] = pair_name
-                    if disp_name != pair_name:
-                        display[pair_name] = disp_name
-                    valid.add(pair_name)
-                return choices, display, valid
-    except Exception:
-        pass
+            if not active_pairs:
+                logging.warning(f"/signal-pairs from {base_url} returned no active pairs")
+                continue
+            choices = {}
+            display = {}
+            valid = set()
+            for i, p in enumerate(active_pairs, 1):
+                pair_name = p["pair_name"]
+                disp_name = p.get("display_name", pair_name)
+                choices[str(i)] = pair_name
+                if disp_name != pair_name:
+                    display[pair_name] = disp_name
+                valid.add(pair_name)
+            return choices, display, valid
+        except Exception as e:
+            logging.warning(f"Failed to fetch /signal-pairs from {base_url}: {e}")
     # Fallback to hardcoded
+    logging.warning("Falling back to hardcoded signal pairs; backend could not be reached.")
     return CURRENCY_PAIR_CHOICES, CURRENCY_PAIR_DISPLAY, set(CURRENCY_PAIRS.keys())
 
 def display_pair_name(pair: str, display_map=None) -> str:
