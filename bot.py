@@ -431,8 +431,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     # Extract last meaningful error line
                     err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                     last_err = err_lines[-1] if err_lines else error_output[:300]
-                    return f"[!] Signal generation failed for this pair.\n\nError: {last_err[:300]}"
-                return "[!] Signal generation failed. This pair may not be supported."
+                    return f"\u26A0\uFE0F Signal generation failed for this pair.\n\nError: {last_err[:300]}"
+                return "\u26A0\uFE0F Signal generation failed. This pair may not be supported."
 
         # Filter out non-signal lines (keep only signal lines + total)
         lines = output.split("\n")
@@ -456,13 +456,13 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # Also keep "Total signals:" and "No signals found"
             parts = line.split()
             if len(parts) >= 4 and parts[1].startswith("M") and parts[3] in ("CALL", "PUT"):
-                signal_lines.append(f"- {line}")
+                signal_lines.append(f"\U0001F4CA {line}")
             elif "Total signals" in line or "No signals found" in line:
                 signal_lines.append(f"\n{line}")
             # All other lines are skipped (noise)
 
         if signal_lines:
-            header = f"Future Signals for {pair} (M{timeframe})\n{'-' * 30}\n"
+            header = f"\U0001F52E Future Signals for {pair} (M{timeframe})\n{'\u2501' * 30}\n"
             return header + "\n".join(signal_lines)
         else:
             # No valid signal lines found
@@ -470,15 +470,15 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             if error_output:
                 err_lines = [l.strip() for l in error_output.split("\n") if l.strip()]
                 last_err = err_lines[-1] if err_lines else error_output[:300]
-                return f"[!] No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
+                return f"\u26A0\uFE0F No signals found for {display_pair_name(pair)}.\n\nError: {last_err[:300]}"
             return ""
 
     except asyncio.TimeoutError:
         logging.error("future_signal.py timed out")
-        return "[!] Signal generation timed out. Please try again."
+        return "\u26A0\uFE0F Signal generation timed out. Please try again."
     except Exception as e:
         logging.error(f"future_signal.py exception: {e}")
-        return f"[!] Error running signal script: {str(e)[:200]}"
+        return f"\u26A0\uFE0F Error running signal script: {str(e)[:200]}"
 
 
 def split_message(text: str, max_length: int = 4000) -> list:
@@ -559,11 +559,11 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
             await message.reply_text(chunk)
     else:
         await message.reply_text(
-            f"[!] No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
+            f"\u26A0\uFE0F No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
             "Possible reasons:\n"
-            "- This pair may not be supported on the platform\n"
-            "- Market may be closed right now\n"
-            "- Not enough data to generate signals\n\n"
+            "\u2022 This pair may not be supported on the platform\n"
+            "\u2022 Market may be closed right now\n"
+            "\u2022 Not enough data to generate signals\n\n"
             "Try with a different pair or timeframe."
         )
 
@@ -638,7 +638,7 @@ async def remove_menu(app):
 # ================= SAWA COMMAND =================
 async def sawa(update, context):
     await store_user(update)
-    await update.message.reply_text("Sawa!")
+    await update.message.reply_text("Sawa! \U0001F604")
 
 # ================= AIDI COMMAND =================
 async def aidi(update, context):
