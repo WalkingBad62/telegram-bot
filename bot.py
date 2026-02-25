@@ -231,7 +231,8 @@ def fetch_promo_image_url():
         try:
             res = requests.get(f"{base_url}/settings/promo-image", timeout=5)
             if res.status_code == 200:
-                url = res.json().get("url", "")
+                data = res.json()
+                url = (data.get("value") or data.get("url") or "").strip()
                 if url:
                     return url
         except Exception:
@@ -244,12 +245,38 @@ def fetch_welcome_image_url():
         try:
             res = requests.get(f"{base_url}/settings/welcome-image", timeout=5)
             if res.status_code == 200:
-                url = res.json().get("url", "")
+                data = res.json()
+                url = (data.get("value") or data.get("url") or "").strip()
                 if url:
                     return url
         except Exception:
             continue
     return ""
+
+def parse_local_image_ref(image_ref: str):
+    raw = (image_ref or "").strip()
+    if not raw.lower().startswith("local:"):
+        return None
+    path = raw[6:].strip()
+    if not path:
+        return None
+    return os.path.abspath(path)
+
+async def send_image_reply(message, image_ref: str, caption: str, reply_markup=None) -> bool:
+    local_path = parse_local_image_ref(image_ref)
+    try:
+        if local_path:
+            if not os.path.isfile(local_path):
+                logging.warning(f"Local image file not found: {local_path}")
+                return False
+            with open(local_path, "rb") as photo_file:
+                await message.reply_photo(photo=photo_file, caption=caption, reply_markup=reply_markup)
+            return True
+        await message.reply_photo(photo=image_ref, caption=caption, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        logging.warning(f"Failed to send image reply: {e}")
+        return False
 
 def fetch_currency_pair(pair: str):
     try:
@@ -804,28 +831,22 @@ async def start(update, context):
     promo_image_url = fetch_promo_image_url()
     welcome_image_url = fetch_welcome_image_url() or promo_image_url
     if promo_image_url:
-        try:
-            await update.message.reply_photo(
-                photo=promo_image_url,
-                caption=first_message_text,
-            )
-        except Exception as e:
-            logging.warning(f"Failed to send promo image: {e}")
+        sent = await send_image_reply(update.message, promo_image_url, first_message_text)
+        if not sent:
             await update.message.reply_text(first_message_text)
     else:
         await update.message.reply_text(first_message_text)
 
     # --- 2nd message: Welcome message + menu buttons (with image when available) ---
     if welcome_image_url:
-        try:
-            await update.message.reply_photo(
-                photo=welcome_image_url,
-                caption=second_message_text,
-                reply_markup=start_menu_keyboard(),
-            )
+        sent = await send_image_reply(
+            update.message,
+            welcome_image_url,
+            second_message_text,
+            reply_markup=start_menu_keyboard(),
+        )
+        if sent:
             return
-        except Exception as e:
-            logging.warning(f"Failed to send welcome image: {e}")
 
     await update.message.reply_text(
         second_message_text,

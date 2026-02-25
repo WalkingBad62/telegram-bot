@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from datetime import datetime, timedelta
 import hashlib
@@ -126,6 +127,10 @@ POCKET_OPTION_SUGGESTIONS = sorted({
 # --- Signal pair test script path ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FUTURE_SIGNAL_SCRIPT = os.path.join(SCRIPT_DIR, "future_signal.py")
+START_IMAGE_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "start-images")
+ALLOWED_START_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+MAX_START_IMAGE_BYTES = 8 * 1024 * 1024
+os.makedirs(START_IMAGE_UPLOAD_DIR, exist_ok=True)
 
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
@@ -135,6 +140,78 @@ def promo_image_setting_key() -> str:
 
 def welcome_image_setting_key() -> str:
     return f"welcome_image_url_{BOT_MODE}"
+
+def is_valid_http_url(url: str) -> bool:
+    value = (url or "").strip().lower()
+    return value.startswith("http://") or value.startswith("https://")
+
+def parse_local_image_setting(value: str) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw.lower().startswith("local:"):
+        return None
+    path = raw[6:].strip()
+    if not path:
+        return None
+    return os.path.abspath(path)
+
+def build_local_image_setting(path: str) -> str:
+    return f"local:{os.path.abspath(path)}"
+
+def image_setting_to_preview_url(value: str) -> str:
+    raw = (value or "").strip()
+    local_path = parse_local_image_setting(raw)
+    if local_path:
+        filename = os.path.basename(local_path)
+        return f"/uploads/start-images/{filename}" if filename else ""
+    return raw
+
+def image_setting_payload(value: str) -> dict:
+    raw = (value or "").strip()
+    return {
+        "url": image_setting_to_preview_url(raw),
+        "value": raw,
+    }
+
+def remove_uploaded_image_if_any(value: str) -> None:
+    local_path = parse_local_image_setting(value)
+    if not local_path:
+        return
+    root = os.path.abspath(START_IMAGE_UPLOAD_DIR)
+    try:
+        if os.path.commonpath([root, local_path]) != root:
+            return
+    except ValueError:
+        return
+    try:
+        if os.path.isfile(local_path):
+            os.remove(local_path)
+    except OSError:
+        pass
+
+async def save_uploaded_start_image(file: UploadFile) -> str:
+    original_name = (file.filename or "").strip()
+    ext = os.path.splitext(original_name)[1].lower()
+    content_type = (file.content_type or "").lower()
+    if ext not in ALLOWED_START_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Use JPG, PNG, GIF, or WEBP.",
+        )
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed.")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > MAX_START_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="Image is too large (max 8MB).")
+    filename = (
+        f"{BOT_MODE}_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+        f"{secrets.token_hex(6)}{ext}"
+    )
+    file_path = os.path.abspath(os.path.join(START_IMAGE_UPLOAD_DIR, filename))
+    with open(file_path, "wb") as f:
+        f.write(content)
+    return file_path
 
 def sanitize_start_message(message: str) -> str:
     if not isinstance(message, str):
@@ -466,6 +543,7 @@ ensure_admin_user()
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
+app.mount("/uploads/start-images", StaticFiles(directory=START_IMAGE_UPLOAD_DIR), name="start_images")
 
 def env_bool(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
@@ -541,8 +619,8 @@ async def update_start_message(request: Request):
 # --- Promo image settings ---
 @app.get("/settings/promo-image")
 def get_promo_image():
-    url = get_setting(promo_image_setting_key(), "")
-    return {"url": url, "mode": BOT_MODE}
+    payload = image_setting_payload(get_setting(promo_image_setting_key(), ""))
+    return {"url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
 @app.put("/settings/promo-image")
 async def update_promo_image(request: Request):
@@ -550,14 +628,33 @@ async def update_promo_image(request: Request):
     require_csrf(request)
     data = await request.json()
     url = (data.get("url") or "").strip()
+    if url and not is_valid_http_url(url):
+        raise HTTPException(status_code=400, detail="Image URL must start with http:// or https://")
+    old_value = get_setting(promo_image_setting_key(), "")
     set_setting(promo_image_setting_key(), url)
-    return {"ok": True, "url": url, "mode": BOT_MODE}
+    if old_value != url:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(url)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.post("/settings/promo-image/upload")
+async def upload_promo_image(request: Request, file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
+    saved_path = await save_uploaded_start_image(file)
+    new_value = build_local_image_setting(saved_path)
+    old_value = get_setting(promo_image_setting_key(), "")
+    set_setting(promo_image_setting_key(), new_value)
+    if old_value != new_value:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(new_value)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
 # --- Welcome image settings ---
 @app.get("/settings/welcome-image")
 def get_welcome_image():
-    url = get_setting(welcome_image_setting_key(), "")
-    return {"url": url, "mode": BOT_MODE}
+    payload = image_setting_payload(get_setting(welcome_image_setting_key(), ""))
+    return {"url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
 @app.put("/settings/welcome-image")
 async def update_welcome_image(request: Request):
@@ -565,8 +662,27 @@ async def update_welcome_image(request: Request):
     require_csrf(request)
     data = await request.json()
     url = (data.get("url") or "").strip()
+    if url and not is_valid_http_url(url):
+        raise HTTPException(status_code=400, detail="Image URL must start with http:// or https://")
+    old_value = get_setting(welcome_image_setting_key(), "")
     set_setting(welcome_image_setting_key(), url)
-    return {"ok": True, "url": url, "mode": BOT_MODE}
+    if old_value != url:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(url)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.post("/settings/welcome-image/upload")
+async def upload_welcome_image(request: Request, file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
+    saved_path = await save_uploaded_start_image(file)
+    new_value = build_local_image_setting(saved_path)
+    old_value = get_setting(welcome_image_setting_key(), "")
+    set_setting(welcome_image_setting_key(), new_value)
+    if old_value != new_value:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(new_value)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
 # --- Currency price endpoint ---
 @app.get("/currency/pair/{pair}")

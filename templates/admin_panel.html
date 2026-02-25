@@ -601,7 +601,15 @@
                 <div class="mb-3">
                     <label class="form-label">Image URL</label>
                     <input type="url" id="promoImageInput" class="form-control" placeholder="https://example.com/promo.jpg">
-                    <div class="file-hint">Direct image link (jpg/png/gif). Leave empty to send text-only promo.</div>
+                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only promo.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Upload From Device</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <input type="file" id="promoImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                        <button type="button" id="promoImageUploadBtn" class="btn btn-outline-primary">Upload Promo File</button>
+                    </div>
+                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
                 </div>
                 <div id="promoImagePreview" class="mb-3" style="display:none;">
                     <img id="promoImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
@@ -622,7 +630,15 @@
                 <div class="mb-3">
                     <label class="form-label">Image URL</label>
                     <input type="url" id="welcomeImageInput" class="form-control" placeholder="https://example.com/welcome.jpg">
-                    <div class="file-hint">Direct image link (jpg/png/gif). Leave empty to reuse the promo image.</div>
+                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to reuse the promo image.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Upload From Device</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <input type="file" id="welcomeImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                        <button type="button" id="welcomeImageUploadBtn" class="btn btn-outline-primary">Upload Welcome File</button>
+                    </div>
+                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
                 </div>
                 <div id="welcomeImagePreview" class="mb-3" style="display:none;">
                     <img id="welcomeImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
@@ -934,14 +950,32 @@
         // --- Promo Image ---
         const promoImageForm = document.getElementById('promoImageForm');
         const promoImageInput = document.getElementById('promoImageInput');
+        const promoImageFile = document.getElementById('promoImageFile');
+        const promoImageUploadBtn = document.getElementById('promoImageUploadBtn');
         const promoImageResult = document.getElementById('promoImageResult');
         const promoImagePreview = document.getElementById('promoImagePreview');
         const promoImageImg = document.getElementById('promoImageImg');
         const welcomeImageForm = document.getElementById('welcomeImageForm');
         const welcomeImageInput = document.getElementById('welcomeImageInput');
+        const welcomeImageFile = document.getElementById('welcomeImageFile');
+        const welcomeImageUploadBtn = document.getElementById('welcomeImageUploadBtn');
         const welcomeImageResult = document.getElementById('welcomeImageResult');
         const welcomeImagePreview = document.getElementById('welcomeImagePreview');
         const welcomeImageImg = document.getElementById('welcomeImageImg');
+
+        function isHttpUrl(value) {
+            const lowered = (value || '').trim().toLowerCase();
+            return lowered.startsWith('http://') || lowered.startsWith('https://');
+        }
+
+        function setImagePreview(imgEl, previewEl, url) {
+            if (url) {
+                imgEl.src = url;
+                previewEl.style.display = 'block';
+                return;
+            }
+            previewEl.style.display = 'none';
+        }
 
         async function loadPromoImage() {
             if (!promoImageInput) return;
@@ -949,13 +983,10 @@
                 const res = await fetch('/settings/promo-image');
                 if (res.status === 401) return;
                 const data = await res.json();
-                promoImageInput.value = data.url || '';
-                if (data.url) {
-                    promoImageImg.src = data.url;
-                    promoImagePreview.style.display = 'block';
-                } else {
-                    promoImagePreview.style.display = 'none';
-                }
+                const previewUrl = (data.url || '').trim();
+                const rawValue = (data.value || '').trim();
+                promoImageInput.value = isHttpUrl(rawValue) ? rawValue : '';
+                setImagePreview(promoImageImg, promoImagePreview, previewUrl);
             } catch (e) {
                 promoImageResult.textContent = 'Error loading promo image.';
             }
@@ -967,13 +998,10 @@
                 const res = await fetch('/settings/welcome-image');
                 if (res.status === 401) return;
                 const data = await res.json();
-                welcomeImageInput.value = data.url || '';
-                if (data.url) {
-                    welcomeImageImg.src = data.url;
-                    welcomeImagePreview.style.display = 'block';
-                } else {
-                    welcomeImagePreview.style.display = 'none';
-                }
+                const previewUrl = (data.url || '').trim();
+                const rawValue = (data.value || '').trim();
+                welcomeImageInput.value = isHttpUrl(rawValue) ? rawValue : '';
+                setImagePreview(welcomeImageImg, welcomeImagePreview, previewUrl);
             } catch (e) {
                 welcomeImageResult.textContent = 'Error loading welcome image.';
             }
@@ -982,13 +1010,41 @@
         if (promoImageInput) {
             promoImageInput.addEventListener('input', function() {
                 const url = promoImageInput.value.trim();
-                if (url) {
-                    promoImageImg.src = url;
-                    promoImagePreview.style.display = 'block';
-                } else {
-                    promoImagePreview.style.display = 'none';
-                }
+                setImagePreview(promoImageImg, promoImagePreview, url);
             });
+        }
+
+        if (promoImageUploadBtn) {
+            promoImageUploadBtn.onclick = async function() {
+                const file = promoImageFile && promoImageFile.files ? promoImageFile.files[0] : null;
+                if (!file) {
+                    promoImageResult.textContent = 'Please choose a promo image file first.';
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/settings/promo-image/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    promoImageResult.textContent = 'Promo image uploaded.';
+                    promoImageInput.value = '';
+                    if (promoImageFile) {
+                        promoImageFile.value = '';
+                    }
+                    setImagePreview(promoImageImg, promoImagePreview, data.url || '');
+                } else {
+                    promoImageResult.textContent = data.detail || data.error || 'Error uploading promo image.';
+                }
+            };
         }
 
         if (promoImageForm) {
@@ -1008,6 +1064,8 @@
                 const data = await res.json();
                 if (res.ok) {
                     promoImageResult.textContent = 'Promo image saved.';
+                    promoImageInput.value = data.value || url;
+                    setImagePreview(promoImageImg, promoImagePreview, data.url || '');
                 } else {
                     promoImageResult.textContent = data.detail || data.error || 'Error saving promo image.';
                 }
@@ -1018,13 +1076,41 @@
         if (welcomeImageInput) {
             welcomeImageInput.addEventListener('input', function() {
                 const url = welcomeImageInput.value.trim();
-                if (url) {
-                    welcomeImageImg.src = url;
-                    welcomeImagePreview.style.display = 'block';
-                } else {
-                    welcomeImagePreview.style.display = 'none';
-                }
+                setImagePreview(welcomeImageImg, welcomeImagePreview, url);
             });
+        }
+
+        if (welcomeImageUploadBtn) {
+            welcomeImageUploadBtn.onclick = async function() {
+                const file = welcomeImageFile && welcomeImageFile.files ? welcomeImageFile.files[0] : null;
+                if (!file) {
+                    welcomeImageResult.textContent = 'Please choose a welcome image file first.';
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/settings/welcome-image/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    welcomeImageResult.textContent = 'Welcome image uploaded.';
+                    welcomeImageInput.value = '';
+                    if (welcomeImageFile) {
+                        welcomeImageFile.value = '';
+                    }
+                    setImagePreview(welcomeImageImg, welcomeImagePreview, data.url || '');
+                } else {
+                    welcomeImageResult.textContent = data.detail || data.error || 'Error uploading welcome image.';
+                }
+            };
         }
 
         if (welcomeImageForm) {
@@ -1044,6 +1130,8 @@
                 const data = await res.json();
                 if (res.ok) {
                     welcomeImageResult.textContent = 'Welcome image saved.';
+                    welcomeImageInput.value = data.value || url;
+                    setImagePreview(welcomeImageImg, welcomeImagePreview, data.url || '');
                 } else {
                     welcomeImageResult.textContent = data.detail || data.error || 'Error saving welcome image.';
                 }
