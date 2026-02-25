@@ -715,9 +715,27 @@ def is_valid_http_url(url: str) -> bool:
     value = (url or "").strip().lower()
     return value.startswith("http://") or value.startswith("https://")
 
-# ================= REMOVE MENU =================
-async def remove_menu(app):
-    await app.bot.set_my_commands([])
+# ================= SET BOT MENU =================
+async def set_bot_menu(app):
+    """Register bot commands that appear in the Telegram menu."""
+    if BOT_MODE == "trading":
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("menu", "Main Menu"),
+            BotCommand("futuresignal", "Generate Future Signal"),
+            BotCommand("yooai", "YOOAI Chart Analysis"),
+            BotCommand("id", "Get your Telegram ID"),
+        ]
+    else:
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("menu", "Main Menu"),
+            BotCommand("futuresignal", "Generate Future Signal"),
+            BotCommand("gajaai", "GajaAI Image Analysis"),
+            BotCommand("currencycoveter", "Currency Converter"),
+            BotCommand("id", "Get your Telegram ID"),
+        ]
+    await app.bot.set_my_commands(commands)
 
 # ================= SAWA COMMAND =================
 async def sawa(update, context):
@@ -740,6 +758,24 @@ async def start(update, context):
         )
     else:
         await update.message.reply_text(fetch_start_message())
+
+async def menu(update, context):
+    """Show main menu with inline buttons."""
+    await store_user(update)
+    if BOT_MODE == "trading":
+        await update.message.reply_text(
+            "\U0001F4CB Main Menu\nChoose an option below:",
+            reply_markup=start_menu_keyboard(),
+        )
+    else:
+        choices, display, valid = fetch_signal_pairs()
+        context.user_data["_pair_choices"] = choices
+        context.user_data["_pair_display"] = display
+        context.user_data["_pair_valid"] = valid
+        await update.message.reply_text(
+            "\U0001F4CB Main Menu\nChoose an option below:",
+            reply_markup=start_menu_keyboard(),
+        )
 
 async def start_menu_callback(update, context):
     query = update.callback_query
@@ -1194,7 +1230,7 @@ async def command_router(update, context):
 
     cmd = update.message.text.lstrip("/").split()[0].lower()
 
-    if cmd in ["start", "add", "retarget", "retarget_all", "imageai", "gajaai", "yooai", "currencycoveter", "futuresignal", "botpanel"]:
+    if cmd in ["start", "menu", "add", "retarget", "retarget_all", "imageai", "gajaai", "yooai", "currencycoveter", "futuresignal", "botpanel"]:
         return
 
     if cmd in custom_commands:
@@ -1280,9 +1316,10 @@ async def forward_any(update, context, users):
 # ================= APP =================
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.post_init = remove_menu  # MENU HIDDEN HERE
+app.post_init = set_bot_menu
 
 app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("menu", menu))
 app.add_handler(CommandHandler("add", add_command))
 app.add_handler(CommandHandler("sawa", sawa))
 app.add_handler(CommandHandler("id", aidi))
