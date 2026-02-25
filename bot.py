@@ -167,17 +167,27 @@ def display_pair_name(pair: str, display_map=None) -> str:
     return CURRENCY_PAIR_DISPLAY.get(pair, pair)
 
 def fix_mojibake(text: str) -> str:
-    """Recover common UTF-8 text decoded as Windows-1252/Latin-1."""
+    """Recover common UTF-8 text decoded as Windows-1252/Latin-1.
+
+    Only attempts recovery when mojibake markers are detected AND
+    the text does NOT already contain valid emoji/Unicode above BMP.
+    This prevents accidentally re-encoding text that is already correct.
+    """
     if not text:
         return text
-    if not any(marker in text for marker in ("Ã", "Â", "â", "ðŸ")):
+    # If text already contains characters above U+00FF (proper Unicode
+    # emoji, CJK, box-drawing, etc.), it is NOT mojibake – return as-is.
+    if any(ord(ch) > 0xFF for ch in text):
+        return text
+    # Only attempt fix when mojibake markers are present
+    if not any(marker in text for marker in ("Ã", "Â", "â", "ðŸ", "Ã¢", "Ã©")):
         return text
     for src_enc in ("cp1252", "latin-1"):
         try:
             fixed = text.encode(src_enc).decode("utf-8")
             if fixed and fixed != text:
                 return fixed
-        except UnicodeError:
+        except (UnicodeEncodeError, UnicodeDecodeError):
             continue
     return text
 
@@ -448,6 +458,9 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
         "--martingale", "0",
     ]
 
+    # Force child Python process to use UTF-8 for all I/O
+    child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
     loop = asyncio.get_event_loop()
     try:
         result = await asyncio.wait_for(
@@ -461,6 +474,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                     errors="replace",
                     timeout=120,
                     cwd=SCRIPT_DIR,
+                    env=child_env,
                 )
             ),
             timeout=130,
@@ -617,8 +631,8 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
     )
     signal_output = await run_future_signal_script(pair, timeframe)
     if signal_output:
-        for chunk in split_message(fix_mojibake(signal_output), 4000):
-            await message.reply_text(fix_mojibake(chunk))
+        for chunk in split_message(signal_output, 4000):
+            await message.reply_text(chunk)
     else:
         await message.reply_text(
             f"\u26A0\uFE0F No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"

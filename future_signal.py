@@ -1,6 +1,7 @@
 
 try:
     import os
+    import sys
     import argparse
     import asyncio
     import pandas as pd
@@ -9,6 +10,13 @@ try:
     from zoneinfo import ZoneInfo
 except ImportError:
     os.system('pip install -r requirements.txt')
+
+# Force UTF-8 for stdout/stderr to prevent mojibake on Windows
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 
 catalogacao = {}

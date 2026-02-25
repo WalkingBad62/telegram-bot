@@ -1117,9 +1117,11 @@ async def test_signal_pair(request: Request):
         "--days", "1",
         "--martingale", "0",
     ]
+    child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=90, cwd=SCRIPT_DIR
+            cmd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=90, cwd=SCRIPT_DIR, env=child_env,
         )
         stderr = result.stderr.strip()
         stdout = result.stdout.strip()
