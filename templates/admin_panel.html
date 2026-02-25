@@ -592,6 +592,27 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
+                    <h2>Promo Image</h2>
+                    <div class="muted">Set the promo image shown when users press /start.</div>
+                </div>
+                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
+            </div>
+            <form id="promoImageForm" class="form-section">
+                <div class="mb-3">
+                    <label class="form-label">Image URL</label>
+                    <input type="url" id="promoImageInput" class="form-control" placeholder="https://example.com/promo.jpg">
+                    <div class="file-hint">Direct image link (jpg/png/gif). Leave empty to send text-only promo.</div>
+                </div>
+                <div id="promoImagePreview" class="mb-3" style="display:none;">
+                    <img id="promoImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Promo Image</button>
+                <div id="promoImageResult" class="mt-2"></div>
+            </form>
+        </div>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
                     <h2>Start Message</h2>
                     <div class="muted">Edit the single /start reply shown to users.</div>
                 </div>
@@ -888,6 +909,65 @@
                 startMessageResult.textContent = 'Error loading start message.';
             }
         }
+
+        // --- Promo Image ---
+        const promoImageForm = document.getElementById('promoImageForm');
+        const promoImageInput = document.getElementById('promoImageInput');
+        const promoImageResult = document.getElementById('promoImageResult');
+        const promoImagePreview = document.getElementById('promoImagePreview');
+        const promoImageImg = document.getElementById('promoImageImg');
+
+        async function loadPromoImage() {
+            if (!promoImageInput) return;
+            try {
+                const res = await fetch('/settings/promo-image');
+                if (res.status === 401) return;
+                const data = await res.json();
+                promoImageInput.value = data.url || '';
+                if (data.url) {
+                    promoImageImg.src = data.url;
+                    promoImagePreview.style.display = 'block';
+                }
+            } catch (e) {
+                promoImageResult.textContent = 'Error loading promo image.';
+            }
+        }
+
+        if (promoImageInput) {
+            promoImageInput.addEventListener('input', function() {
+                const url = promoImageInput.value.trim();
+                if (url) {
+                    promoImageImg.src = url;
+                    promoImagePreview.style.display = 'block';
+                } else {
+                    promoImagePreview.style.display = 'none';
+                }
+            });
+        }
+
+        if (promoImageForm) {
+            promoImageForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const url = promoImageInput.value.trim();
+                const res = await fetch('/settings/promo-image', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ url })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    promoImageResult.textContent = 'Promo image saved.';
+                } else {
+                    promoImageResult.textContent = data.detail || data.error || 'Error saving promo image.';
+                }
+            };
+        }
+        loadPromoImage();
 
         if (startMessageForm) {
             startMessageForm.onsubmit = async function(e) {

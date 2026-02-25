@@ -231,6 +231,19 @@ def fetch_start_message():
         pass
     return DEFAULT_START_MESSAGE
 
+def fetch_promo_image_url():
+    """Fetch promo image URL from backend settings."""
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/promo-image", timeout=5)
+            if res.status_code == 200:
+                url = res.json().get("url", "")
+                if url:
+                    return url
+        except Exception:
+            continue
+    return ""
+
 def fetch_currency_pair(pair: str):
     try:
         res = requests.get(f"{BACKEND_URL}/currency/pair/{pair}", timeout=5)
@@ -736,15 +749,47 @@ async def aidi(update, context):
     await update.message.reply_text(f"Your Telegram ID: {user_id}")
 
 # ================= START =================
+PROMO_TEXT = (
+    "\U0001F525\U0001F4C8 Want 10 FREE NON MTG BUG Quotex Signals?\n\n"
+    "\U0001F449 Click on JOIN CHANNEL now!\n"
+    "And you will get FREE 10 QUOTEX SIGNALS\n\n"
+    "\U0001F517 LINK :\U0001F447\U0001F447\U0001F447\U0001F447\n"
+    "https://t.me/+Gfa2prDUdPVlMzE1\n"
+    "https://t.me/+Gfa2prDUdPVlMzE1\n"
+    "https://t.me/+Gfa2prDUdPVlMzE1\n"
+    "https://t.me/+Gfa2prDUdPVlMzE1\n\n"
+    "Signals starting in 5 Minutes"
+)
+
 async def start(update, context):
     await store_user(update)
+
+    # --- 1st message: Promo image + promo text ---
+    promo_image_url = fetch_promo_image_url()
+    if promo_image_url:
+        try:
+            await update.message.reply_photo(
+                photo=promo_image_url,
+                caption=PROMO_TEXT,
+            )
+        except Exception as e:
+            logging.warning(f"Failed to send promo image: {e}")
+            await update.message.reply_text(PROMO_TEXT)
+    else:
+        await update.message.reply_text(PROMO_TEXT)
+
+    # --- 2nd message: Welcome message + menu buttons ---
     if BOT_MODE == "trading":
+        welcome = fetch_start_message()
         await update.message.reply_text(
-            DEFAULT_START_MESSAGE,
+            welcome,
             reply_markup=start_menu_keyboard(),
         )
     else:
-        await update.message.reply_text(fetch_start_message())
+        await update.message.reply_text(
+            fetch_start_message(),
+            reply_markup=start_menu_keyboard(),
+        )
 
 async def menu(update, context):
     """Show main menu with inline buttons."""

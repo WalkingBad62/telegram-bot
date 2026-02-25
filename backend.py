@@ -524,6 +524,24 @@ async def update_start_message(request: Request):
     set_setting(start_message_setting_key(), raw_message)
     return {"ok": True, "message": raw_message, "mode": BOT_MODE}
 
+# --- Promo image settings ---
+def promo_image_setting_key() -> str:
+    return f"promo_image_url_{BOT_MODE}"
+
+@app.get("/settings/promo-image")
+def get_promo_image():
+    url = get_setting(promo_image_setting_key(), "")
+    return {"url": url, "mode": BOT_MODE}
+
+@app.put("/settings/promo-image")
+async def update_promo_image(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    set_setting(promo_image_setting_key(), url)
+    return {"ok": True, "url": url, "mode": BOT_MODE}
+
 # --- Currency price endpoint ---
 @app.get("/currency/pair/{pair}")
 def currency_pair(pair: str):
