@@ -7,6 +7,7 @@ from telegram.error import RetryAfter
 from datetime import datetime
 import asyncio
 import ast
+import html as html_mod
 import json
 import logging
 import os
@@ -480,8 +481,8 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             timeout=130,
         )
 
-        output = fix_mojibake(result.stdout).strip()
-        error_output = fix_mojibake(result.stderr).strip()
+        output = result.stdout.strip()
+        error_output = result.stderr.strip()
 
         if result.returncode != 0:
             logging.error(f"future_signal.py error (rc={result.returncode}): {error_output}")
@@ -514,7 +515,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             "hours in the future",
         ]
         for line in lines:
-            line = fix_mojibake(line).strip()
+            line = line.strip()
             if not line:
                 continue
             # Skip known noise/warning lines
@@ -524,7 +525,9 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             m_signal = signal_pattern.search(line)
             if m_signal:
                 asset, tf, hhmm, direction = m_signal.groups()
-                signal_lines.append(f"\U0001F4CA {asset} M{tf} {hhmm} {direction.upper()}")
+                direction_up = direction.upper()
+                dir_emoji = "\U0001F7E2" if direction_up == "CALL" else "\U0001F534"
+                signal_lines.append(f"{dir_emoji} {html_mod.escape(asset)}  M{tf}  {hhmm}  <b>{direction_up}</b>")
                 continue
 
             m_total = total_pattern.search(line)
@@ -537,8 +540,10 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # All other lines are skipped as noise.
 
         if signal_lines:
-            header = f"\U0001F52E Future Signals for {pair} (M{timeframe})\n{'\u2501' * 30}\n"
-            total_text = f"\n\nTotal signals: {reported_total if reported_total is not None else len(signal_lines)}"
+            safe_pair = html_mod.escape(str(pair))
+            header = f"\U0001F4C8 <b>Future Signals \u2014 {safe_pair} (M{timeframe})</b>\n\n"
+            count = reported_total if reported_total is not None else len(signal_lines)
+            total_text = f"\n\n\U0001F4CB <b>Total signals: {count}</b>"
             return header + "\n".join(signal_lines) + total_text
         else:
             # No valid signal lines found
@@ -632,7 +637,10 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
     signal_output = await run_future_signal_script(pair, timeframe)
     if signal_output:
         for chunk in split_message(signal_output, 4000):
-            await message.reply_text(chunk)
+            try:
+                await message.reply_text(chunk, parse_mode="HTML")
+            except Exception:
+                await message.reply_text(chunk)
     else:
         await message.reply_text(
             f"\u26A0\uFE0F No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
