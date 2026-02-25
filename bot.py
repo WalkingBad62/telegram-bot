@@ -718,23 +718,10 @@ def is_valid_http_url(url: str) -> bool:
 # ================= SET BOT MENU =================
 async def set_bot_menu(app):
     """Register bot commands that appear in the Telegram menu."""
-    if BOT_MODE == "trading":
-        commands = [
-            BotCommand("start", "Start the bot"),
-            BotCommand("menu", "Main Menu"),
-            BotCommand("futuresignal", "Generate Future Signal"),
-            BotCommand("yooai", "YOOAI Chart Analysis"),
-            BotCommand("id", "Get your Telegram ID"),
-        ]
-    else:
-        commands = [
-            BotCommand("start", "Start the bot"),
-            BotCommand("menu", "Main Menu"),
-            BotCommand("futuresignal", "Generate Future Signal"),
-            BotCommand("gajaai", "GajaAI Image Analysis"),
-            BotCommand("currencycoveter", "Currency Converter"),
-            BotCommand("id", "Get your Telegram ID"),
-        ]
+    commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("menu", "Main Menu"),
+    ]
     await app.bot.set_my_commands(commands)
 
 # ================= SAWA COMMAND =================
