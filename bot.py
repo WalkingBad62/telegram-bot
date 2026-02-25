@@ -195,20 +195,14 @@ def fix_mojibake(text: str) -> str:
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
         return (
-            "\U0001f680 Welcome to the YOO/twExSavage Trading Edge!\n"
-            "Ready to stop guessing and start winning on Pocket Option? "
-            "I've helped 500+ traders turn their first deposit into a consistent daily income. "
-            "https://tinyurl.com/twExSavage\n\n"
-            "Why Join Us?\n"
-            "\u26a1 Pro Signals: 90%+ Accuracy.\n"
-            "\U0001f4ca Live Coaching: Learn while you earn.\n"
-            "\U0001f4b0 Pocket Option Bonus: Use code [HEYYOO] for a 50% deposit bonus!\n"
-            "How to start: > 1. Register via the link below\n\n"
-            "WORLDWIDE LINK\U0001f310\nhttps://tinyurl.com/twExSavage\n"
-            "RUSSIAN LINK\U0001f1f7\U0001f1fa\nhttps://tinyurl.com/twExSavageRU\n"
-            "2. Send me your Pocket Option ID to verify.\n"
-            "3. Get added to the Private Couching Room instantly.\n\n"
-            "CONTACT TRADERS @YOO_SUPPORT1"
+            "\U0001f31f Welcome to twExSavage Trading Bot \U0001f31f\n\n"
+            "\U0001f7e1 How to use this bot\n"
+            "1- AT FIRST START THE BOT\n"
+            "2- THEN CLICK \u25b6\ufe0f Start Bot\n"
+            "3- IF YOU DIDN'T JOIN OUR CHANNEL YOU HAVE TO JOIN FIRST\n"
+            "4- CLICK I HAVE JOINED\n"
+            "5- NOW YOU CAN USE ALL TRADING FEATURES\n\n"
+            "FOLLOW THE PROCESS TO START TRADING \U0001f4c8"
         )
     return (
         "Welcome To Currency Exchange Bot\n\n"
