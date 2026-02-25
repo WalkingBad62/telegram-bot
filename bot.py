@@ -551,7 +551,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
 
         # Filter out non-signal lines (keep only parsed signal rows + total)
         lines = output.split("\n")
-        signal_lines = []
+        signal_rows = []
         reported_total = None
         # Known noise lines to skip
         skip_phrases = [
@@ -574,7 +574,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                 asset, tf, hhmm, direction = m_signal.groups()
                 direction_up = direction.upper()
                 dir_emoji = "\U0001F7E2" if direction_up == "CALL" else "\U0001F534"
-                signal_lines.append(f"{dir_emoji} {html_mod.escape(asset)}  M{tf}  {hhmm}  <b>{direction_up}</b>")
+                signal_rows.append((dir_emoji, asset.upper(), f"M{tf}", hhmm, direction_up))
                 continue
 
             m_total = total_pattern.search(line)
@@ -586,12 +586,20 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
                 return f"\u26A0\uFE0F No signals found for {display_pair_name(pair)}."
             # All other lines are skipped as noise.
 
-        if signal_lines:
+        if signal_rows:
             safe_pair = html_mod.escape(str(pair))
             header = f"\U0001F4C8 <b>Future Signals \u2014 {safe_pair} (M{timeframe})</b>\n\n"
-            count = reported_total if reported_total is not None else len(signal_lines)
+            pair_col = max(len(asset) for _, asset, _, _, _ in signal_rows)
+            tf_col = max(len(tf) for _, _, tf, _, _ in signal_rows)
+            table_lines = []
+            for emoji, asset, tf, hhmm, direction_up in signal_rows:
+                table_lines.append(
+                    f"{emoji} {asset.ljust(pair_col)}  {tf.ljust(tf_col)}  {hhmm}  {direction_up}"
+                )
+            code_block = html_mod.escape("\n".join(table_lines))
+            count = reported_total if reported_total is not None else len(signal_rows)
             total_text = f"\n\n\U0001F4CB <b>Total signals: {count}</b>"
-            return header + "\n".join(signal_lines) + total_text
+            return header + f"<pre>{code_block}</pre>" + total_text
         else:
             # No valid signal lines found
             logging.warning(f"No signal lines parsed for {pair} M{timeframe}. Raw output: {output[:300]}. Stderr: {error_output[:200]}")
