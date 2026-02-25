@@ -238,6 +238,19 @@ def fetch_promo_image_url():
             continue
     return ""
 
+def fetch_welcome_image_url():
+    """Fetch welcome image URL from backend settings."""
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/welcome-image", timeout=5)
+            if res.status_code == 200:
+                url = res.json().get("url", "")
+                if url:
+                    return url
+        except Exception:
+            continue
+    return ""
+
 def fetch_currency_pair(pair: str):
     try:
         res = requests.get(f"{BACKEND_URL}/currency/pair/{pair}", timeout=5)
@@ -755,35 +768,69 @@ PROMO_TEXT = (
     "Signals starting in 5 Minutes"
 )
 
+TRADING_START_PROMO_TEXT = (
+    "\U0001F680 Welcome to the YOO/twExSavage Trading Edge!\n"
+    "Ready to stop guessing and start winning on Pocket Option? I've helped 500+ traders turn their first deposit into a consistent daily income. https://tinyurl.com/twExSavage\n\n"
+    "Why Join Us?\n"
+    "\u26A1\uFE0F Pro Signals: 90%+ Accuracy.\n"
+    "\U0001F4CA Live Coaching: Learn while you earn.\n"
+    "\U0001F4B0 Pocket Option Bonus: Use code [HEYYOO] for a 50% deposit bonus!\n"
+    "How to start: > 1. Register via the link below\n\n"
+    "WORLDWIDE LINK\U0001F310\n"
+    "https://tinyurl.com/twExSavage\n"
+    "RUSSIAN LINK\U0001F1F7\U0001F1FA\n"
+    "https://tinyurl.com/twExSavageRU\n"
+    "2. Send me your Pocket Option ID to verify.\n"
+    "3. Get added to the Private Couching Room instantly.\n\n"
+    "CONTACT TRADERS @YOO_SUPPORT1"
+)
+
+TRADING_WELCOME_TEXT = (
+    "\U0001F44B Welcome to twExSavage Trading Bot!\n"
+    "Choose an option below to continue."
+)
+
 async def start(update, context):
     await store_user(update)
 
+    if BOT_MODE == "trading":
+        first_message_text = TRADING_START_PROMO_TEXT
+        second_message_text = TRADING_WELCOME_TEXT
+    else:
+        first_message_text = PROMO_TEXT
+        second_message_text = fetch_start_message()
+
     # --- 1st message: Promo image + promo text ---
     promo_image_url = fetch_promo_image_url()
+    welcome_image_url = fetch_welcome_image_url() or promo_image_url
     if promo_image_url:
         try:
             await update.message.reply_photo(
                 photo=promo_image_url,
-                caption=PROMO_TEXT,
+                caption=first_message_text,
             )
         except Exception as e:
             logging.warning(f"Failed to send promo image: {e}")
-            await update.message.reply_text(PROMO_TEXT)
+            await update.message.reply_text(first_message_text)
     else:
-        await update.message.reply_text(PROMO_TEXT)
+        await update.message.reply_text(first_message_text)
 
-    # --- 2nd message: Welcome message + menu buttons ---
-    if BOT_MODE == "trading":
-        welcome = fetch_start_message()
-        await update.message.reply_text(
-            welcome,
-            reply_markup=start_menu_keyboard(),
-        )
-    else:
-        await update.message.reply_text(
-            fetch_start_message(),
-            reply_markup=start_menu_keyboard(),
-        )
+    # --- 2nd message: Welcome message + menu buttons (with image when available) ---
+    if welcome_image_url:
+        try:
+            await update.message.reply_photo(
+                photo=welcome_image_url,
+                caption=second_message_text,
+                reply_markup=start_menu_keyboard(),
+            )
+            return
+        except Exception as e:
+            logging.warning(f"Failed to send welcome image: {e}")
+
+    await update.message.reply_text(
+        second_message_text,
+        reply_markup=start_menu_keyboard(),
+    )
 
 async def menu(update, context):
     """Show main menu with inline buttons."""

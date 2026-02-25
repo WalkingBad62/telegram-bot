@@ -130,6 +130,12 @@ FUTURE_SIGNAL_SCRIPT = os.path.join(SCRIPT_DIR, "future_signal.py")
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
 
+def promo_image_setting_key() -> str:
+    return f"promo_image_url_{BOT_MODE}"
+
+def welcome_image_setting_key() -> str:
+    return f"welcome_image_url_{BOT_MODE}"
+
 def sanitize_start_message(message: str) -> str:
     if not isinstance(message, str):
         return message
@@ -207,6 +213,14 @@ def init_db():
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (start_message_setting_key(), DEFAULT_START_MESSAGE)
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (promo_image_setting_key(), "")
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (welcome_image_setting_key(), "")
         )
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for pair, info in DEFAULT_CURRENCY_PAIRS.items():
@@ -525,9 +539,6 @@ async def update_start_message(request: Request):
     return {"ok": True, "message": raw_message, "mode": BOT_MODE}
 
 # --- Promo image settings ---
-def promo_image_setting_key() -> str:
-    return f"promo_image_url_{BOT_MODE}"
-
 @app.get("/settings/promo-image")
 def get_promo_image():
     url = get_setting(promo_image_setting_key(), "")
@@ -540,6 +551,21 @@ async def update_promo_image(request: Request):
     data = await request.json()
     url = (data.get("url") or "").strip()
     set_setting(promo_image_setting_key(), url)
+    return {"ok": True, "url": url, "mode": BOT_MODE}
+
+# --- Welcome image settings ---
+@app.get("/settings/welcome-image")
+def get_welcome_image():
+    url = get_setting(welcome_image_setting_key(), "")
+    return {"url": url, "mode": BOT_MODE}
+
+@app.put("/settings/welcome-image")
+async def update_welcome_image(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    set_setting(welcome_image_setting_key(), url)
     return {"ok": True, "url": url, "mode": BOT_MODE}
 
 # --- Currency price endpoint ---
