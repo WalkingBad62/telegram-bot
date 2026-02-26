@@ -704,8 +704,7 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             if m_signal:
                 asset, tf, hhmm, direction = m_signal.groups()
                 direction_up = direction.upper()
-                dir_emoji = "\U0001F7E2" if direction_up == "CALL" else "\U0001F534"
-                signal_rows.append((dir_emoji, asset.upper(), f"M{tf}", hhmm, direction_up))
+                signal_rows.append((asset.upper(), f"M{tf}", hhmm, direction_up))
                 continue
 
             m_total = total_pattern.search(line)
@@ -719,18 +718,39 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
 
         if signal_rows:
             safe_pair = html_mod.escape(str(pair))
-            header = f"\U0001F4C8 <b>Future Signals \u2014 {safe_pair} (M{timeframe})</b>\n\n"
-            pair_col = max(len(asset) for _, asset, _, _, _ in signal_rows)
-            tf_col = max(len(tf) for _, _, tf, _, _ in signal_rows)
-            table_lines = []
-            for emoji, asset, tf, hhmm, direction_up in signal_rows:
-                table_lines.append(
-                    f"{emoji} {asset.ljust(pair_col)}  {tf.ljust(tf_col)}  {hhmm}  {direction_up}"
-                )
-            code_block = html_mod.escape("\n".join(table_lines))
             count = reported_total if reported_total is not None else len(signal_rows)
-            total_text = f"\n\n\U0001F4CB <b>Total signals: {count}</b>"
-            return header + f"<pre>{code_block}</pre>" + total_text
+            call_count = sum(1 for _, _, _, direction_up in signal_rows if direction_up == "CALL")
+            put_count = sum(1 for _, _, _, direction_up in signal_rows if direction_up == "PUT")
+
+            idx_col = max(2, len(str(len(signal_rows))))
+            pair_col = max(4, max(len(asset) for asset, _, _, _ in signal_rows))
+            tf_col = max(2, max(len(tf) for _, tf, _, _ in signal_rows))
+            time_col = 5
+            side_col = 4
+
+            sep = (
+                f"+-{'-' * idx_col}-+-{'-' * pair_col}-+-{'-' * tf_col}-"
+                f"+-{'-' * time_col}-+-{'-' * side_col}-+"
+            )
+            header_row = (
+                f"| {'#'.ljust(idx_col)} | {'PAIR'.ljust(pair_col)} | "
+                f"{'TF'.ljust(tf_col)} | {'TIME'.ljust(time_col)} | "
+                f"{'SIDE'.ljust(side_col)} |"
+            )
+            table_lines = [sep, header_row, sep]
+            for i, (asset, tf, hhmm, direction_up) in enumerate(signal_rows, 1):
+                idx = str(i).zfill(2).rjust(idx_col)
+                table_lines.append(
+                    f"| {idx} | {asset.ljust(pair_col)} | {tf.ljust(tf_col)} "
+                    f"| {hhmm.ljust(time_col)} | {direction_up.ljust(side_col)} |"
+                )
+            table_lines.append(sep)
+            code_block = html_mod.escape("\n".join(table_lines))
+            generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            header = f"<b>Future Signals | {safe_pair} (M{timeframe})</b>"
+            stats = f"CALL: <b>{call_count}</b> | PUT: <b>{put_count}</b>"
+            footer = f"<b>Total signals: {count}</b>\n<i>Generated: {generated_at}</i>"
+            return f"{header}\n{stats}\n\n<pre>{code_block}</pre>\n{footer}"
         else:
             # No valid signal lines found
             logging.warning(f"No signal lines parsed for {pair} M{timeframe}. Raw output: {output[:300]}. Stderr: {error_output[:200]}")
@@ -820,13 +840,16 @@ async def send_futuresignal_result(message, pair: str, timeframe: int, display=N
         f"\u23f3 Generating signals for {display_pair_name(pair, display)} (M{timeframe})...\n"
         "This may take 30-60 seconds. Please wait."
     )
-    signal_output = await run_future_signal_script(pair, timeframe)
+    signal_output = fix_mojibake(await run_future_signal_script(pair, timeframe))
     if signal_output:
         for chunk in split_message(signal_output, 4000):
+            safe_chunk = fix_mojibake(chunk)
             try:
-                await message.reply_text(chunk, parse_mode="HTML")
-            except Exception:
-                await message.reply_text(chunk)
+                await message.reply_text(safe_chunk, parse_mode="HTML")
+            except Exception as e:
+                logging.warning(f"Failed to send futuresignal chunk with HTML parse mode: {e}")
+                plain_chunk = re.sub(r"</?[^>]+>", "", safe_chunk)
+                await message.reply_text(fix_mojibake(plain_chunk))
     else:
         await message.reply_text(
             f"\u26A0\uFE0F No signals found for {display_pair_name(pair, display)} (M{timeframe}).\n\n"
