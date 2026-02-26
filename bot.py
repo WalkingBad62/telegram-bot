@@ -131,7 +131,7 @@ CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 FEATURE_USAGE_LIMIT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT < 1:
     FEATURE_USAGE_LIMIT = 3
-FEATURE_WINDOW_SECONDS = 24 * 60 * 60
+FEATURE_WINDOW_SECONDS = 0 * 1 * 0
 FEATURE_FUTURESIGNAL = "future_signal"
 FEATURE_YOOAI = "yooai"
 FEATURE_LABELS = {
@@ -955,6 +955,32 @@ def _split_report_lines(text: str, max_chars: int, max_lines: int = 2) -> list[s
     trimmed[-1] = tail.rstrip() + "..."
     return trimmed
 
+REPORT_LABEL_ALIASES = {
+    "SUPPORT ZONE PRICE": "SUPPORT ZONE",
+    "RESISTANCE ZONE PRICE": "RESISTANCE ZONE",
+}
+
+def _fit_report_label(draw, text: str, font, max_width: int) -> str:
+    normalized = re.sub(r"\s+", " ", str(text or "").strip().upper())
+    if not normalized:
+        return "N/A"
+
+    try:
+        if draw.textbbox((0, 0), normalized, font=font)[2] <= max_width:
+            return normalized
+    except Exception:
+        if len(normalized) <= 20:
+            return normalized
+        return normalized[:17].rstrip() + "..."
+
+    trimmed = normalized
+    while len(trimmed) > 4:
+        candidate = trimmed.rstrip() + "..."
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+            return candidate
+        trimmed = trimmed[:-1]
+    return "..."
+
 def _build_yooai_report_rows(data) -> list[tuple[str, str]]:
     if not isinstance(data, dict):
         return [("Result", "Invalid analysis response")]
@@ -1057,15 +1083,29 @@ def build_yooai_report_image(data, source_image_bytes: bytes | None = None):
         draw.text((78, 694), "AI SIGNAL DETAILS", fill=(228, 242, 255), font=section_font)
 
         label_x = 86
-        value_x = 392
-        row_y = 754
-        max_value_chars = 34
+        max_label_width = 0
+        available_right = details_box[2] - 40
+        display_rows: list[tuple[str, str]] = []
         for label, value in rows:
+            raw_label = str(label).strip().upper()
+            label_alias = REPORT_LABEL_ALIASES.get(raw_label, raw_label)
+            fitted_label = _fit_report_label(draw, label_alias, label_font, max_width=340)
+            display_rows.append((fitted_label, str(value)))
+            try:
+                label_width = draw.textbbox((0, 0), fitted_label, font=label_font)[2]
+            except Exception:
+                label_width = len(fitted_label) * 13
+            if label_width > max_label_width:
+                max_label_width = label_width
+
+        value_x = min(label_x + max_label_width + 26, available_right - 260)
+        if value_x < label_x + 170:
+            value_x = label_x + 170
+        row_y = 754
+        max_value_chars = max(18, int((available_right - value_x) / 14))
+        for label_text, value in display_rows:
             if row_y > details_box[3] - 92:
                 break
-            label_text = str(label).strip().upper()
-            if len(label_text) > 20:
-                label_text = label_text[:20] + "..."
             draw.text((label_x, row_y), label_text, fill=(158, 190, 225), font=label_font)
             wrapped_values = _split_report_lines(str(value), max_chars=max_value_chars, max_lines=2)
             for idx, line in enumerate(wrapped_values):
