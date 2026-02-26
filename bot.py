@@ -18,7 +18,7 @@ import subprocess
 import sys
 import requests
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 # ================= ENV =================
 load_dotenv()
@@ -129,7 +129,7 @@ CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 FEATURE_USAGE_LIMIT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT < 1:
     FEATURE_USAGE_LIMIT = 3
-FEATURE_WINDOW_SECONDS = 0 * 1 * 0
+FEATURE_WINDOW_SECONDS = 24 * 60 * 60
 FEATURE_FUTURESIGNAL = "future_signal"
 FEATURE_YOOAI = "yooai"
 FEATURE_LABELS = {
@@ -500,58 +500,85 @@ def _short_loading_caption(caption: str) -> str:
 
 
 def _build_dark_loading_gif_bytes(caption: str) -> bytes | None:
-    cache_key = _short_loading_caption(caption)
+    cache_key = "dark_ring_loader_v2"
     cached = _DARK_LOADING_GIF_CACHE.get(cache_key)
     if cached:
         return cached
     try:
-        width, height = 520, 180
+        width, height = 500, 290
+        center_x, center_y = width // 2, height // 2
+        segment_count = 12
+        step = 360 / segment_count
+        gap_deg = 7
+        outer_radius = 64
+        ring_width = 12
+
+        background = Image.new("RGBA", (width, height), (20, 20, 21, 255))
+        bg_draw = ImageDraw.Draw(background, "RGBA")
+        for y in range(height):
+            shade = 18 + int((y / max(1, height - 1)) * 10)
+            bg_draw.line((0, y, width, y), fill=(shade, shade, shade + 1, 255))
+        for x in range(0, width, 3):
+            alpha = 10 if (x // 3) % 2 == 0 else 5
+            bg_draw.line((x, 0, x, height), fill=(0, 0, 0, alpha))
+
+        ring_box = (
+            center_x - outer_radius,
+            center_y - outer_radius,
+            center_x + outer_radius,
+            center_y + outer_radius,
+        )
+        glow_box = (
+            center_x - outer_radius - 5,
+            center_y - outer_radius - 5,
+            center_x + outer_radius + 5,
+            center_y + outer_radius + 5,
+        )
+        inner_radius = outer_radius - ring_width - 3
         frames = []
-        font = ImageFont.load_default()
-        title = cache_key
-        for idx in range(12):
-            img = Image.new("RGB", (width, height), (8, 14, 24))
-            draw = ImageDraw.Draw(img)
+        for idx in range(segment_count):
+            img = background.copy()
+            draw = ImageDraw.Draw(img, "RGBA")
 
-            draw.rounded_rectangle(
-                (14, 14, width - 14, height - 14),
-                radius=20,
-                fill=(11, 22, 38),
-                outline=(34, 61, 92),
-                width=2,
+            for seg in range(segment_count):
+                seg_start = -90 + (seg * step) + (gap_deg / 2)
+                seg_end = -90 + ((seg + 1) * step) - (gap_deg / 2)
+                draw.arc(ring_box, seg_start, seg_end, fill=(52, 54, 58, 220), width=ring_width)
+                draw.arc(ring_box, seg_start, seg_end, fill=(26, 28, 32, 255), width=2)
+
+            trail = [
+                (0, (56, 255, 98, 255), (56, 255, 98, 120)),
+                (1, (30, 205, 70, 255), (30, 205, 70, 90)),
+                (2, (17, 138, 46, 255), (17, 138, 46, 70)),
+            ]
+            for back_steps, arc_color, glow_color in trail:
+                active_seg = (idx - back_steps) % segment_count
+                seg_start = -90 + (active_seg * step) + (gap_deg / 2)
+                seg_end = -90 + ((active_seg + 1) * step) - (gap_deg / 2)
+                draw.arc(glow_box, seg_start, seg_end, fill=glow_color, width=ring_width + 9)
+                draw.arc(ring_box, seg_start, seg_end, fill=arc_color, width=ring_width)
+
+            draw.ellipse(
+                (
+                    center_x - inner_radius,
+                    center_y - inner_radius,
+                    center_x + inner_radius,
+                    center_y + inner_radius,
+                ),
+                fill=(22, 22, 24, 255),
             )
-            draw.text((30, 30), "Loading", fill=(114, 156, 210), font=font)
-            draw.text((30, 58), title, fill=(205, 228, 252), font=font)
-
-            bar_x0, bar_y0, bar_x1, bar_y1 = 30, 120, width - 30, 136
-            draw.rounded_rectangle(
-                (bar_x0, bar_y0, bar_x1, bar_y1),
-                radius=8,
-                fill=(20, 36, 56),
-                outline=(32, 56, 84),
+            draw.ellipse(
+                (
+                    center_x - inner_radius + 2,
+                    center_y - inner_radius + 2,
+                    center_x + inner_radius - 2,
+                    center_y + inner_radius - 2,
+                ),
+                outline=(34, 36, 40, 180),
                 width=1,
             )
-            bar_w = bar_x1 - bar_x0
-            pulse_w = 140
-            step = int(((bar_w + pulse_w) / 11) * idx) - pulse_w
-            pulse_x0 = max(bar_x0, bar_x0 + step)
-            pulse_x1 = min(bar_x1, bar_x0 + step + pulse_w)
-            if pulse_x1 > pulse_x0:
-                draw.rounded_rectangle(
-                    (pulse_x0, bar_y0 + 1, pulse_x1, bar_y1 - 1),
-                    radius=7,
-                    fill=(0, 175, 255),
-                )
 
-            base_dot_x = width - 126
-            for dot_idx in range(3):
-                x = base_dot_x + (dot_idx * 28)
-                y = 42
-                active = (idx + dot_idx) % 3 == 0
-                fill = (0, 205, 255) if active else (42, 71, 100)
-                draw.ellipse((x, y, x + 14, y + 14), fill=fill)
-
-            frames.append(img)
+            frames.append(img.convert("P", palette=Image.ADAPTIVE))
 
         buff = io.BytesIO()
         frames[0].save(
@@ -559,9 +586,9 @@ def _build_dark_loading_gif_bytes(caption: str) -> bytes | None:
             format="GIF",
             save_all=True,
             append_images=frames[1:],
-            duration=110,
+            duration=90,
             loop=0,
-            optimize=False,
+            optimize=True,
             disposal=2,
         )
         data = buff.getvalue()
