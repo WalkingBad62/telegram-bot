@@ -436,6 +436,36 @@ def fetch_start_message():
         pass
     return DEFAULT_START_MESSAGE
 
+def build_absolute_backend_url(base_url: str, value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return raw
+    if raw.startswith("//"):
+        return f"https:{raw}"
+    return f"{base_url.rstrip('/')}/{raw.lstrip('/')}"
+
+def resolve_backend_image_ref(base_url: str, payload: dict) -> str:
+    raw_value = (payload.get("value") or "").strip()
+    preview_url = (payload.get("url") or "").strip()
+
+    local_path = parse_local_image_ref(raw_value)
+    if local_path:
+        if os.path.isfile(local_path):
+            return raw_value
+        if preview_url:
+            return build_absolute_backend_url(base_url, preview_url)
+        logging.warning(f"Backend image local file missing and no preview URL: {local_path}")
+        return ""
+
+    if raw_value:
+        return build_absolute_backend_url(base_url, raw_value)
+    if preview_url:
+        return build_absolute_backend_url(base_url, preview_url)
+    return ""
+
 def fetch_promo_image_url():
     """Fetch promo image URL from backend settings."""
     for base_url in iter_backend_urls():
@@ -443,9 +473,9 @@ def fetch_promo_image_url():
             res = requests.get(f"{base_url}/settings/promo-image", timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                url = (data.get("value") or data.get("url") or "").strip()
-                if url:
-                    return url
+                image_ref = resolve_backend_image_ref(base_url, data)
+                if image_ref:
+                    return image_ref
         except Exception:
             continue
     return ""
@@ -457,9 +487,9 @@ def fetch_welcome_image_url():
             res = requests.get(f"{base_url}/settings/welcome-image", timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                url = (data.get("value") or data.get("url") or "").strip()
-                if url:
-                    return url
+                image_ref = resolve_backend_image_ref(base_url, data)
+                if image_ref:
+                    return image_ref
         except Exception:
             continue
     return ""
