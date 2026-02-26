@@ -30,6 +30,16 @@ try:
     IMAGEAI_TIMEOUT = float(os.getenv("IMAGEAI_TIMEOUT", "35"))
 except ValueError:
     IMAGEAI_TIMEOUT = 35.0
+YOOAI_LOADING_GIF_URL = os.getenv(
+    "YOOAI_LOADING_GIF_URL",
+    "https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif",
+).strip()
+try:
+    YOOAI_LOADING_GIF_SECONDS = float(os.getenv("YOOAI_LOADING_GIF_SECONDS", "1"))
+except ValueError:
+    YOOAI_LOADING_GIF_SECONDS = 1.0
+if YOOAI_LOADING_GIF_SECONDS < 0.2:
+    YOOAI_LOADING_GIF_SECONDS = 0.2
 
 # ================= ADMIN =================
 ADMIN_IDS = [8544013336]
@@ -408,6 +418,28 @@ async def send_image_reply(message, image_ref: str, caption: str, reply_markup=N
     except Exception as e:
         logging.warning(f"Failed to send image reply: {e}")
         return False
+
+
+async def send_temporary_loading_gif(message):
+    """Send a short loading GIF and delete it after a delay."""
+    if not YOOAI_LOADING_GIF_URL:
+        return
+    loading_msg = None
+    try:
+        loading_msg = await message.reply_animation(
+            animation=YOOAI_LOADING_GIF_URL,
+            caption="Analyzing image...",
+        )
+    except Exception as e:
+        logging.warning(f"Failed to send YOOAI loading GIF: {e}")
+        return
+
+    await asyncio.sleep(YOOAI_LOADING_GIF_SECONDS)
+    try:
+        await loading_msg.delete()
+    except Exception as e:
+        logging.warning(f"Failed to delete YOOAI loading GIF message: {e}")
+
 
 def fetch_currency_pair(pair: str):
     try:
@@ -1492,6 +1524,7 @@ async def user_media_handler(update, context):
                 return
             await update.message.reply_text(_build_usage_after_consume_message(FEATURE_YOOAI, remaining, reset_ts))
             try:
+                await send_temporary_loading_gif(update.message)
                 photo = update.message.photo[-1]
                 tg_file = await photo.get_file()
                 file_bytes = await tg_file.download_as_bytearray()
