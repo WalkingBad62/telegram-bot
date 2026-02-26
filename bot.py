@@ -669,14 +669,14 @@ def build_trading_summary(analysis):
     resistance = get_ci(analysis, "resistance_zone_price")
 
     rows = [
-        f"Pair: {pair_text}",
-        f"Current Trend: {trend_text}",
-        f"Signal: {signal_text}",
-        f"Signal Strength: {strength_text}",
-        f"Chart Pattern: {pattern_text}",
-        f"Chart Type: {chart_type_text}",
-        f"Support Zone Price: {format_analysis_price(support) if is_present(support) else 'N/A'}",
-        f"Resistance Zone Price: {format_analysis_price(resistance) if is_present(resistance) else 'N/A'}",
+        ("Pair", pair_text),
+        ("Current Trend", trend_text),
+        ("Signal", signal_text),
+        ("Signal Strength", strength_text),
+        ("Chart Pattern", pattern_text),
+        ("Chart Type", chart_type_text),
+        ("Support Zone Price", format_analysis_price(support) if is_present(support) else "N/A"),
+        ("Resistance Zone Price", format_analysis_price(resistance) if is_present(resistance) else "N/A"),
     ]
 
     known_keys = {
@@ -689,9 +689,15 @@ def build_trading_summary(analysis):
             continue
         if not is_present(value):
             continue
-        rows.append(f"{title_text(key)}: {value}")
+        rows.append((title_text(key) or str(key), format_analysis_value(value)))
 
-    return "\n".join(rows)
+    key_col = max(len(str(label)) for label, _ in rows) if rows else 4
+    formatted_lines = []
+    for label, value in rows:
+        value_text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+        value_text = " | ".join(part.strip() for part in value_text.split("\n") if part.strip()) or "N/A"
+        formatted_lines.append(f"{str(label).ljust(key_col)} : {value_text}")
+    return "\n".join(formatted_lines)
 
 def build_ai_reply(data):
     if not isinstance(data, dict):
@@ -705,14 +711,17 @@ def build_ai_reply(data):
         analysis = data.get("analysis")
         if analysis is None:
             analysis = data
-        return f"Hey Yoo! Details ready- *\n\n{build_trading_summary(analysis)}"
+        safe_summary = html_mod.escape(build_trading_summary(analysis))
+        return f"\U0001F9E0 <b>YooAI \u2014 Trade Analysis</b>\n\n<pre>{safe_summary}</pre>"
     currency = data.get("currency", "USD")
     price = format_money(data.get("price", ""))
     discount = format_money(data.get("discount", ""))
+    safe_currency = html_mod.escape(str(currency))
+    safe_price = html_mod.escape(str(price))
+    safe_discount = html_mod.escape(str(discount))
     return (
-        f"Currency: {currency}\n"
-        f"Price: ${price}\n"
-        f"Discount: ${discount}"
+        "\U0001F4B1 <b>YooAI \u2014 Currency</b>\n\n"
+        f"<pre>Currency : {safe_currency}\nPrice    : ${safe_price}\nDiscount : ${safe_discount}</pre>"
     )
 
 
@@ -1589,7 +1598,13 @@ async def user_media_handler(update, context):
                 file_bytes = await tg_file.download_as_bytearray()
                 data = fetch_imageai_price(bytes(file_bytes), filename)
                 if data:
-                    await update.message.reply_text(build_ai_reply(data))
+                    ai_reply = build_ai_reply(data)
+                    try:
+                        await update.message.reply_text(ai_reply, parse_mode="HTML")
+                    except Exception as e:
+                        logging.warning(f"Failed to send YooAI reply with HTML parse mode: {e}")
+                        plain_reply = re.sub(r"</?[^>]+>", "", ai_reply)
+                        await update.message.reply_text(fix_mojibake(plain_reply))
                 else:
                     await update.message.reply_text("Image processed, but result not available.")
             except Exception:
