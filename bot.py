@@ -7,6 +7,7 @@ from telegram.error import RetryAfter
 from datetime import datetime
 import asyncio
 import ast
+import io
 import html as html_mod
 import json
 import logging
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import requests
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont
 
 # ================= ENV =================
 load_dotenv()
@@ -34,12 +36,15 @@ YOOAI_LOADING_GIF_URL = os.getenv(
     "YOOAI_LOADING_GIF_URL",
     "https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif",
 ).strip()
+USE_DARK_LOADING_GIF = (os.getenv("USE_DARK_LOADING_GIF", "1") or "1").strip().lower() not in ("0", "false", "no")
 try:
     YOOAI_LOADING_GIF_SECONDS = float(os.getenv("YOOAI_LOADING_GIF_SECONDS", "1"))
 except ValueError:
     YOOAI_LOADING_GIF_SECONDS = 1.0
 if YOOAI_LOADING_GIF_SECONDS < 0.2:
     YOOAI_LOADING_GIF_SECONDS = 0.2
+
+_DARK_LOADING_GIF_CACHE: dict[str, bytes] = {}
 
 # ================= ADMIN =================
 ADMIN_IDS = [8544013336]
@@ -124,7 +129,7 @@ CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 FEATURE_USAGE_LIMIT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT < 1:
     FEATURE_USAGE_LIMIT = 3
-FEATURE_WINDOW_SECONDS = 24 * 60 * 60
+FEATURE_WINDOW_SECONDS = 0 * 1 * 0
 FEATURE_FUTURESIGNAL = "future_signal"
 FEATURE_YOOAI = "yooai"
 FEATURE_LABELS = {
@@ -485,18 +490,118 @@ async def send_image_reply(message, image_ref: str, caption: str, reply_markup=N
         return False
 
 
-async def send_temporary_loading_gif(message):
+def _short_loading_caption(caption: str) -> str:
+    text = re.sub(r"\s+", " ", str(caption or "").strip())
+    if not text:
+        return "Please wait..."
+    if len(text) <= 52:
+        return text
+    return text[:49].rstrip() + "..."
+
+
+def _build_dark_loading_gif_bytes(caption: str) -> bytes | None:
+    cache_key = _short_loading_caption(caption)
+    cached = _DARK_LOADING_GIF_CACHE.get(cache_key)
+    if cached:
+        return cached
+    try:
+        width, height = 520, 180
+        frames = []
+        font = ImageFont.load_default()
+        title = cache_key
+        for idx in range(12):
+            img = Image.new("RGB", (width, height), (8, 14, 24))
+            draw = ImageDraw.Draw(img)
+
+            draw.rounded_rectangle(
+                (14, 14, width - 14, height - 14),
+                radius=20,
+                fill=(11, 22, 38),
+                outline=(34, 61, 92),
+                width=2,
+            )
+            draw.text((30, 30), "Loading", fill=(114, 156, 210), font=font)
+            draw.text((30, 58), title, fill=(205, 228, 252), font=font)
+
+            bar_x0, bar_y0, bar_x1, bar_y1 = 30, 120, width - 30, 136
+            draw.rounded_rectangle(
+                (bar_x0, bar_y0, bar_x1, bar_y1),
+                radius=8,
+                fill=(20, 36, 56),
+                outline=(32, 56, 84),
+                width=1,
+            )
+            bar_w = bar_x1 - bar_x0
+            pulse_w = 140
+            step = int(((bar_w + pulse_w) / 11) * idx) - pulse_w
+            pulse_x0 = max(bar_x0, bar_x0 + step)
+            pulse_x1 = min(bar_x1, bar_x0 + step + pulse_w)
+            if pulse_x1 > pulse_x0:
+                draw.rounded_rectangle(
+                    (pulse_x0, bar_y0 + 1, pulse_x1, bar_y1 - 1),
+                    radius=7,
+                    fill=(0, 175, 255),
+                )
+
+            base_dot_x = width - 126
+            for dot_idx in range(3):
+                x = base_dot_x + (dot_idx * 28)
+                y = 42
+                active = (idx + dot_idx) % 3 == 0
+                fill = (0, 205, 255) if active else (42, 71, 100)
+                draw.ellipse((x, y, x + 14, y + 14), fill=fill)
+
+            frames.append(img)
+
+        buff = io.BytesIO()
+        frames[0].save(
+            buff,
+            format="GIF",
+            save_all=True,
+            append_images=frames[1:],
+            duration=110,
+            loop=0,
+            optimize=False,
+            disposal=2,
+        )
+        data = buff.getvalue()
+        if data:
+            _DARK_LOADING_GIF_CACHE[cache_key] = data
+        return data
+    except Exception as e:
+        logging.warning(f"Failed to build dark loading GIF: {e}")
+        return None
+
+
+async def send_temporary_loading_gif(message, caption: str = "Analyzing image..."):
     """Send a short loading GIF and delete it after a delay."""
-    if not YOOAI_LOADING_GIF_URL:
+    if not YOOAI_LOADING_GIF_URL and not USE_DARK_LOADING_GIF:
         return
     loading_msg = None
-    try:
-        loading_msg = await message.reply_animation(
-            animation=YOOAI_LOADING_GIF_URL,
-            caption="Analyzing image...",
-        )
-    except Exception as e:
-        logging.warning(f"Failed to send YOOAI loading GIF: {e}")
+    short_caption = _short_loading_caption(caption)
+    if USE_DARK_LOADING_GIF:
+        dark_gif = _build_dark_loading_gif_bytes(short_caption)
+        if dark_gif:
+            try:
+                dark_stream = io.BytesIO(dark_gif)
+                dark_stream.name = "loading_dark.gif"
+                loading_msg = await message.reply_animation(
+                    animation=dark_stream,
+                    caption=short_caption,
+                )
+            except Exception as e:
+                logging.warning(f"Failed to send dark loading GIF: {e}")
+
+    if not loading_msg and YOOAI_LOADING_GIF_URL:
+        try:
+            loading_msg = await message.reply_animation(
+                animation=YOOAI_LOADING_GIF_URL,
+                caption=short_caption,
+            )
+        except Exception as e:
+            logging.warning(f"Failed to send loading GIF: {e}")
+            return
+    if not loading_msg:
         return
 
     await asyncio.sleep(YOOAI_LOADING_GIF_SECONDS)
@@ -922,6 +1027,10 @@ def futuresignal_timeframe_keyboard(pair: str):
     return InlineKeyboardMarkup(rows)
 
 async def send_futuresignal_result(message, pair: str, timeframe: int, display=None):
+    await send_temporary_loading_gif(
+        message,
+        caption=f"Generating signals for {display_pair_name(pair, display)} (M{timeframe})...",
+    )
     await message.reply_text(
         f"\u23f3 Generating signals for {display_pair_name(pair, display)} (M{timeframe})...\n"
         "This may take 30-60 seconds. Please wait."
