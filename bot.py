@@ -132,6 +132,12 @@ FEATURE_LABELS = {
     FEATURE_YOOAI: "YOOAI Prediction",
 }
 USAGE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_usage.db")
+try:
+    YOOAI_PENDING_TTL_SECONDS = int(os.getenv("YOOAI_PENDING_TTL_SECONDS", "1800") or "1800")
+except ValueError:
+    YOOAI_PENDING_TTL_SECONDS = 1800
+if YOOAI_PENDING_TTL_SECONDS < 60:
+    YOOAI_PENDING_TTL_SECONDS = 60
 
 
 def init_usage_db():
@@ -152,6 +158,16 @@ def init_usage_db():
             """
             CREATE INDEX IF NOT EXISTS idx_feature_usage_user_feature_time
             ON feature_usage (telegram_id, feature, used_at)
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_uploads (
+                telegram_id INTEGER NOT NULL,
+                feature TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (telegram_id, feature)
+            )
             """
         )
         conn.commit()
@@ -250,6 +266,55 @@ def consume_feature_usage(telegram_id: int, username: str, feature: str) -> tupl
     first_use_in_window = int(oldest) if oldest else now_ts
     reset_ts = (first_use_in_window + FEATURE_WINDOW_SECONDS) if remaining == 0 else None
     return True, remaining, reset_ts
+
+
+def set_pending_feature(telegram_id: int, feature: str):
+    now_ts = _now_ts()
+    cleanup_before = now_ts - (FEATURE_WINDOW_SECONDS * 7)
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM pending_uploads WHERE created_at < ?", (cleanup_before,))
+        c.execute(
+            """
+            INSERT INTO pending_uploads (telegram_id, feature, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telegram_id, feature) DO UPDATE SET created_at = excluded.created_at
+            """,
+            (telegram_id, feature, now_ts),
+        )
+        conn.commit()
+
+
+def clear_pending_feature(telegram_id: int, feature: str):
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            "DELETE FROM pending_uploads WHERE telegram_id = ? AND feature = ?",
+            (telegram_id, feature),
+        )
+        conn.commit()
+
+
+def has_pending_feature(telegram_id: int, feature: str, ttl_seconds: int) -> bool:
+    now_ts = _now_ts()
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT created_at FROM pending_uploads WHERE telegram_id = ? AND feature = ?",
+            (telegram_id, feature),
+        )
+        row = c.fetchone()
+        if not row:
+            return False
+        created_at = int(row[0] or 0)
+        if created_at <= 0 or (now_ts - created_at) > ttl_seconds:
+            c.execute(
+                "DELETE FROM pending_uploads WHERE telegram_id = ? AND feature = ?",
+                (telegram_id, feature),
+            )
+            conn.commit()
+            return False
+        return True
 
 def iter_backend_urls() -> list[str]:
     """Return candidate backend base URLs in priority order (deduplicated)."""
@@ -1099,6 +1164,7 @@ async def start_menu_callback(update, context):
             await query.message.reply_text(_build_limit_block_message(FEATURE_YOOAI, reset_ts))
             return
         context.user_data[AWAIT_IMAGEAI_KEY] = True
+        set_pending_feature(user_id, FEATURE_YOOAI)
         await query.message.reply_text(
             f"{_build_limit_reminder(FEATURE_YOOAI, remaining)}\nPlease Upload your image"
         )
@@ -1239,6 +1305,7 @@ async def imageai(update, context):
         await update.message.reply_text(_build_limit_block_message(FEATURE_YOOAI, reset_ts))
         return
     context.user_data[AWAIT_IMAGEAI_KEY] = True
+    set_pending_feature(user.id, FEATURE_YOOAI)
     await update.message.reply_text(
         f"{_build_limit_reminder(FEATURE_YOOAI, remaining)}\nPlease Upload your image"
     )
@@ -1510,10 +1577,17 @@ async def user_media_handler(update, context):
                 await update.message.reply_text("Please send a photo.")
             return
 
-    if context.user_data.get(AWAIT_IMAGEAI_KEY):
-        if update.message.photo:
+    user = update.message.from_user
+    yooai_pending = context.user_data.get(AWAIT_IMAGEAI_KEY) or has_pending_feature(
+        user.id,
+        FEATURE_YOOAI,
+        YOOAI_PENDING_TTL_SECONDS,
+    )
+    if yooai_pending:
+        image_doc = update.message.document if update.message.document and (update.message.document.mime_type or "").startswith("image/") else None
+        if update.message.photo or image_doc:
             context.user_data.pop(AWAIT_IMAGEAI_KEY, None)
-            user = update.message.from_user
+            clear_pending_feature(user.id, FEATURE_YOOAI)
             allowed, remaining, reset_ts = consume_feature_usage(
                 user.id,
                 user.username or "",
@@ -1525,10 +1599,15 @@ async def user_media_handler(update, context):
             await update.message.reply_text(_build_usage_after_consume_message(FEATURE_YOOAI, remaining, reset_ts))
             try:
                 await send_temporary_loading_gif(update.message)
-                photo = update.message.photo[-1]
-                tg_file = await photo.get_file()
+                if update.message.photo:
+                    photo = update.message.photo[-1]
+                    tg_file = await photo.get_file()
+                    filename = f"{photo.file_unique_id}.jpg"
+                else:
+                    tg_file = await image_doc.get_file()
+                    filename = image_doc.file_name or f"{image_doc.file_unique_id}.jpg"
                 file_bytes = await tg_file.download_as_bytearray()
-                data = fetch_imageai_price(bytes(file_bytes), f"{photo.file_unique_id}.jpg")
+                data = fetch_imageai_price(bytes(file_bytes), filename)
                 if data:
                     await update.message.reply_text(build_ai_reply(data))
                 else:
@@ -1536,7 +1615,7 @@ async def user_media_handler(update, context):
             except Exception:
                 await update.message.reply_text("Image processed, but result not available.")
         else:
-            await update.message.reply_text("Please upload an image.")
+            await update.message.reply_text("Please upload an image (photo or image file).")
         return
 
     if update.message.photo:
