@@ -600,8 +600,8 @@ def _build_dark_loading_gif_bytes(caption: str) -> bytes | None:
         return None
 
 
-async def send_temporary_loading_gif(message, caption: str = "Analyzing image..."):
-    """Send a short loading GIF and delete it after a delay."""
+async def send_temporary_loading_gif(message, caption: str = "Analyzing image...", auto_delete: bool = True):
+    """Send loading GIF. Optionally keep it until caller deletes."""
     if not YOOAI_LOADING_GIF_URL and not USE_DARK_LOADING_GIF:
         return
     loading_msg = None
@@ -627,15 +627,18 @@ async def send_temporary_loading_gif(message, caption: str = "Analyzing image...
             )
         except Exception as e:
             logging.warning(f"Failed to send loading GIF: {e}")
-            return
+            return None
     if not loading_msg:
-        return
+        return None
 
-    await asyncio.sleep(YOOAI_LOADING_GIF_SECONDS)
-    try:
-        await loading_msg.delete()
-    except Exception as e:
-        logging.warning(f"Failed to delete YOOAI loading GIF message: {e}")
+    if auto_delete:
+        await asyncio.sleep(YOOAI_LOADING_GIF_SECONDS)
+        try:
+            await loading_msg.delete()
+        except Exception as e:
+            logging.warning(f"Failed to delete YOOAI loading GIF message: {e}")
+        return None
+    return loading_msg
 
 
 def fetch_currency_pair(pair: str):
@@ -1054,15 +1057,19 @@ def futuresignal_timeframe_keyboard(pair: str):
     return InlineKeyboardMarkup(rows)
 
 async def send_futuresignal_result(message, pair: str, timeframe: int, display=None):
-    await send_temporary_loading_gif(
+    loading_msg = await send_temporary_loading_gif(
         message,
         caption=f"Generating signals for {display_pair_name(pair, display)} (M{timeframe})...",
+        auto_delete=False,
     )
-    await message.reply_text(
-        f"\u23f3 Generating signals for {display_pair_name(pair, display)} (M{timeframe})...\n"
-        "This may take 30-60 seconds. Please wait."
-    )
-    signal_output = fix_mojibake(await run_future_signal_script(pair, timeframe))
+    try:
+        signal_output = fix_mojibake(await run_future_signal_script(pair, timeframe))
+    finally:
+        if loading_msg:
+            try:
+                await loading_msg.delete()
+            except Exception as e:
+                logging.warning(f"Failed to delete futuresignal loading GIF message: {e}")
     if signal_output:
         for chunk in split_message(signal_output, 4000):
             safe_chunk = fix_mojibake(chunk)
@@ -1722,8 +1729,14 @@ async def user_media_handler(update, context):
                 await update.message.reply_text(_build_limit_block_message(FEATURE_YOOAI, reset_ts))
                 return
             await update.message.reply_text(_build_usage_after_consume_message(FEATURE_YOOAI, remaining, reset_ts))
+            loading_msg = None
+            data = None
             try:
-                await send_temporary_loading_gif(update.message)
+                loading_msg = await send_temporary_loading_gif(
+                    update.message,
+                    caption="Analyzing image...",
+                    auto_delete=False,
+                )
                 if update.message.photo:
                     photo = update.message.photo[-1]
                     tg_file = await photo.get_file()
@@ -1733,17 +1746,24 @@ async def user_media_handler(update, context):
                     filename = image_doc.file_name or f"{image_doc.file_unique_id}.jpg"
                 file_bytes = await tg_file.download_as_bytearray()
                 data = fetch_imageai_price(bytes(file_bytes), filename)
-                if data:
-                    ai_reply = build_ai_reply(data)
-                    try:
-                        await update.message.reply_text(ai_reply, parse_mode="HTML")
-                    except Exception as e:
-                        logging.warning(f"Failed to send YooAI reply with HTML parse mode: {e}")
-                        plain_reply = re.sub(r"</?[^>]+>", "", ai_reply)
-                        await update.message.reply_text(fix_mojibake(plain_reply))
-                else:
-                    await update.message.reply_text("Image processed, but result not available.")
             except Exception:
+                data = None
+            finally:
+                if loading_msg:
+                    try:
+                        await loading_msg.delete()
+                    except Exception as e:
+                        logging.warning(f"Failed to delete YooAI loading GIF message: {e}")
+
+            if data:
+                ai_reply = build_ai_reply(data)
+                try:
+                    await update.message.reply_text(ai_reply, parse_mode="HTML")
+                except Exception as e:
+                    logging.warning(f"Failed to send YooAI reply with HTML parse mode: {e}")
+                    plain_reply = re.sub(r"</?[^>]+>", "", ai_reply)
+                    await update.message.reply_text(fix_mojibake(plain_reply))
+            else:
                 await update.message.reply_text("Image processed, but result not available.")
         else:
             await update.message.reply_text("Please upload an image (photo or image file).")
