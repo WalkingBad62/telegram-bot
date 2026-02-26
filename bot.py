@@ -45,6 +45,7 @@ if YOOAI_LOADING_GIF_SECONDS < 0.2:
     YOOAI_LOADING_GIF_SECONDS = 0.2
 
 _DARK_LOADING_GIF_CACHE: dict[str, bytes] = {}
+MAX_FUTURESIGNAL_DISPLAY = 7
 
 # ================= ADMIN =================
 ADMIN_IDS = [8544013336]
@@ -989,8 +990,9 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # All other lines are skipped as noise.
 
         if signal_rows:
+            signal_rows = signal_rows[:MAX_FUTURESIGNAL_DISPLAY]
             safe_pair = html_mod.escape(str(pair))
-            count = reported_total if reported_total is not None else len(signal_rows)
+            count = len(signal_rows)
             header = f"\U0001F4C8 <b>Future Signals \u2014 {safe_pair} (M{timeframe})</b>\n\n"
             pair_col = max(len(asset) for _, asset, _, _, _ in signal_rows)
             tf_col = max(len(tf) for _, _, tf, _, _ in signal_rows)
