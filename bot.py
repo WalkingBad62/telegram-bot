@@ -1279,20 +1279,28 @@ async def start(update, context):
 async def menu(update, context):
     """Show main menu with inline buttons."""
     await store_user(update)
-    if BOT_MODE == "trading":
-        await update.message.reply_text(
-            "\U0001F4CB Main Menu\nChoose an option below:",
-            reply_markup=start_menu_keyboard(),
-        )
-    else:
+    if BOT_MODE != "trading":
         choices, display, valid = fetch_signal_pairs()
         context.user_data["_pair_choices"] = choices
         context.user_data["_pair_display"] = display
         context.user_data["_pair_valid"] = valid
-        await update.message.reply_text(
-            "\U0001F4CB Main Menu\nChoose an option below:",
+
+    menu_text = "\U0001F4CB Main Menu\nChoose an option below:"
+    menu_image_url = fetch_welcome_image_url() or fetch_promo_image_url()
+    if menu_image_url:
+        sent = await send_image_reply(
+            update.message,
+            menu_image_url,
+            menu_text,
             reply_markup=start_menu_keyboard(),
         )
+        if sent:
+            return
+
+    await update.message.reply_text(
+        menu_text,
+        reply_markup=start_menu_keyboard(),
+    )
 
 async def start_menu_callback(update, context):
     query = update.callback_query
