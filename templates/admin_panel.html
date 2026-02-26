@@ -650,6 +650,35 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
+                    <h2>Menu Image</h2>
+                    <div class="muted">Set the image shown only with the /menu command.</div>
+                </div>
+                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
+            </div>
+            <form id="menuImageForm" class="form-section">
+                <div class="mb-3">
+                    <label class="form-label">Image URL</label>
+                    <input type="url" id="menuImageInput" class="form-control" placeholder="https://example.com/menu.jpg">
+                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only menu.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Upload From Device</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <input type="file" id="menuImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                        <button type="button" id="menuImageUploadBtn" class="btn btn-outline-primary">Upload Menu File</button>
+                    </div>
+                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
+                </div>
+                <div id="menuImagePreview" class="mb-3" style="display:none;">
+                    <img id="menuImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Menu Image</button>
+                <div id="menuImageResult" class="mt-2"></div>
+            </form>
+        </div>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
                     <h2>Start Message</h2>
                     <div class="muted">Edit the welcome text shown in the second /start message.</div>
                 </div>
@@ -962,6 +991,13 @@
         const welcomeImageResult = document.getElementById('welcomeImageResult');
         const welcomeImagePreview = document.getElementById('welcomeImagePreview');
         const welcomeImageImg = document.getElementById('welcomeImageImg');
+        const menuImageForm = document.getElementById('menuImageForm');
+        const menuImageInput = document.getElementById('menuImageInput');
+        const menuImageFile = document.getElementById('menuImageFile');
+        const menuImageUploadBtn = document.getElementById('menuImageUploadBtn');
+        const menuImageResult = document.getElementById('menuImageResult');
+        const menuImagePreview = document.getElementById('menuImagePreview');
+        const menuImageImg = document.getElementById('menuImageImg');
 
         function isHttpUrl(value) {
             const lowered = (value || '').trim().toLowerCase();
@@ -1004,6 +1040,21 @@
                 setImagePreview(welcomeImageImg, welcomeImagePreview, previewUrl);
             } catch (e) {
                 welcomeImageResult.textContent = 'Error loading welcome image.';
+            }
+        }
+
+        async function loadMenuImage() {
+            if (!menuImageInput) return;
+            try {
+                const res = await fetch('/settings/menu-image');
+                if (res.status === 401) return;
+                const data = await res.json();
+                const previewUrl = (data.url || '').trim();
+                const rawValue = (data.value || '').trim();
+                menuImageInput.value = isHttpUrl(rawValue) ? rawValue : '';
+                setImagePreview(menuImageImg, menuImagePreview, previewUrl);
+            } catch (e) {
+                menuImageResult.textContent = 'Error loading menu image.';
             }
         }
 
@@ -1138,6 +1189,72 @@
             };
         }
         loadWelcomeImage();
+
+        if (menuImageInput) {
+            menuImageInput.addEventListener('input', function() {
+                const url = menuImageInput.value.trim();
+                setImagePreview(menuImageImg, menuImagePreview, url);
+            });
+        }
+
+        if (menuImageUploadBtn) {
+            menuImageUploadBtn.onclick = async function() {
+                const file = menuImageFile && menuImageFile.files ? menuImageFile.files[0] : null;
+                if (!file) {
+                    menuImageResult.textContent = 'Please choose a menu image file first.';
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/settings/menu-image/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    menuImageResult.textContent = 'Menu image uploaded.';
+                    menuImageInput.value = '';
+                    if (menuImageFile) {
+                        menuImageFile.value = '';
+                    }
+                    setImagePreview(menuImageImg, menuImagePreview, data.url || '');
+                } else {
+                    menuImageResult.textContent = data.detail || data.error || 'Error uploading menu image.';
+                }
+            };
+        }
+
+        if (menuImageForm) {
+            menuImageForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const url = menuImageInput.value.trim();
+                const res = await fetch('/settings/menu-image', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ url })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    menuImageResult.textContent = 'Menu image saved.';
+                    menuImageInput.value = data.value || url;
+                    setImagePreview(menuImageImg, menuImagePreview, data.url || '');
+                } else {
+                    menuImageResult.textContent = data.detail || data.error || 'Error saving menu image.';
+                }
+            };
+        }
+        loadMenuImage();
 
         if (startMessageForm) {
             startMessageForm.onsubmit = async function(e) {

@@ -495,6 +495,20 @@ def fetch_welcome_image_url():
             continue
     return ""
 
+def fetch_menu_image_url():
+    """Fetch menu image URL from backend settings."""
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/menu-image", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                image_ref = resolve_backend_image_ref(base_url, data)
+                if image_ref:
+                    return image_ref
+        except Exception:
+            continue
+    return ""
+
 def parse_local_image_ref(image_ref: str):
     raw = (image_ref or "").strip()
     if not raw.lower().startswith("local:"):
@@ -1286,7 +1300,7 @@ async def menu(update, context):
         context.user_data["_pair_valid"] = valid
 
     menu_text = "\U0001F4CB Main Menu\nChoose an option below:"
-    menu_image_url = fetch_welcome_image_url() or fetch_promo_image_url()
+    menu_image_url = fetch_menu_image_url()
     if menu_image_url:
         sent = await send_image_reply(
             update.message,

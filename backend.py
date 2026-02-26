@@ -141,6 +141,9 @@ def promo_image_setting_key() -> str:
 def welcome_image_setting_key() -> str:
     return f"welcome_image_url_{BOT_MODE}"
 
+def menu_image_setting_key() -> str:
+    return f"menu_image_url_{BOT_MODE}"
+
 def is_valid_http_url(url: str) -> bool:
     value = (url or "").strip().lower()
     return value.startswith("http://") or value.startswith("https://")
@@ -298,6 +301,10 @@ def init_db():
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (welcome_image_setting_key(), "")
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (menu_image_setting_key(), "")
         )
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for pair, info in DEFAULT_CURRENCY_PAIRS.items():
@@ -679,6 +686,40 @@ async def upload_welcome_image(request: Request, file: UploadFile = File(...)):
     new_value = build_local_image_setting(saved_path)
     old_value = get_setting(welcome_image_setting_key(), "")
     set_setting(welcome_image_setting_key(), new_value)
+    if old_value != new_value:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(new_value)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+# --- Menu image settings ---
+@app.get("/settings/menu-image")
+def get_menu_image():
+    payload = image_setting_payload(get_setting(menu_image_setting_key(), ""))
+    return {"url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.put("/settings/menu-image")
+async def update_menu_image(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    if url and not is_valid_http_url(url):
+        raise HTTPException(status_code=400, detail="Image URL must start with http:// or https://")
+    old_value = get_setting(menu_image_setting_key(), "")
+    set_setting(menu_image_setting_key(), url)
+    if old_value != url:
+        remove_uploaded_image_if_any(old_value)
+    payload = image_setting_payload(url)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.post("/settings/menu-image/upload")
+async def upload_menu_image(request: Request, file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
+    saved_path = await save_uploaded_start_image(file)
+    new_value = build_local_image_setting(saved_path)
+    old_value = get_setting(menu_image_setting_key(), "")
+    set_setting(menu_image_setting_key(), new_value)
     if old_value != new_value:
         remove_uploaded_image_if_any(old_value)
     payload = image_setting_payload(new_value)
