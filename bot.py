@@ -16,9 +16,10 @@ import re
 import sqlite3
 import subprocess
 import sys
+import textwrap
 import requests
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 # ================= ENV =================
 load_dotenv()
@@ -904,6 +905,186 @@ def build_ai_reply(data):
         f"<pre>Currency : {safe_currency}\nPrice    : ${safe_price}\nDiscount : ${safe_discount}</pre>"
     )
 
+def _load_report_font(size: int, bold: bool = False):
+    candidates = []
+    if os.name == "nt":
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        font_dir = os.path.join(windir, "Fonts")
+        if bold:
+            candidates.extend(
+                [
+                    os.path.join(font_dir, "arialbd.ttf"),
+                    os.path.join(font_dir, "segoeuib.ttf"),
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    os.path.join(font_dir, "arial.ttf"),
+                    os.path.join(font_dir, "segoeui.ttf"),
+                ]
+            )
+    candidates.extend(
+        [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
+        ]
+    )
+    for font_path in candidates:
+        try:
+            if font_path and os.path.isfile(font_path):
+                return ImageFont.truetype(font_path, size=size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.truetype("arial.ttf", size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+def _split_report_lines(text: str, max_chars: int, max_lines: int = 2) -> list[str]:
+    raw = str(text or "").replace("\r\n", " ").replace("\n", " ").strip()
+    if not raw:
+        return ["N/A"]
+    wrapped = textwrap.wrap(raw, width=max_chars) or [raw]
+    if len(wrapped) <= max_lines:
+        return wrapped
+    trimmed = wrapped[:max_lines]
+    tail = trimmed[-1]
+    if len(tail) > max(3, max_chars - 3):
+        tail = tail[: max_chars - 3]
+    trimmed[-1] = tail.rstrip() + "..."
+    return trimmed
+
+def _build_yooai_report_rows(data) -> list[tuple[str, str]]:
+    if not isinstance(data, dict):
+        return [("Result", "Invalid analysis response")]
+    if "error" in data:
+        return [("Status", "Error"), ("Detail", str(data.get("error")))]
+
+    if data.get("mode") == "trading" or "analysis" in data:
+        analysis = data.get("analysis")
+        if analysis is None:
+            analysis = data
+        summary_text = build_trading_summary(analysis)
+        rows = []
+        for line in str(summary_text).splitlines():
+            if ":" not in line:
+                continue
+            label, value = line.split(":", 1)
+            label = label.strip()
+            value = value.strip()
+            if label and value:
+                rows.append((label, value))
+        if not rows:
+            rows.append(("Analysis", str(summary_text)))
+        return rows
+
+    currency = str(data.get("currency", "USD"))
+    price = str(format_money(data.get("price", "")))
+    discount = str(format_money(data.get("discount", "")))
+    return [
+        ("Mode", "Currency"),
+        ("Currency", currency),
+        ("Price", f"${price}"),
+        ("Discount", f"${discount}"),
+    ]
+
+def _report_accent_color(rows: list[tuple[str, str]]) -> tuple[int, int, int]:
+    signal_value = ""
+    for label, value in rows:
+        if str(label).strip().lower() == "signal":
+            signal_value = str(value).upper()
+            break
+    if any(token in signal_value for token in ("BUY", "CALL", "UP")):
+        return (42, 200, 120)
+    if any(token in signal_value for token in ("SELL", "PUT", "DOWN")):
+        return (235, 86, 86)
+    return (65, 160, 255)
+
+def build_yooai_report_image(data, source_image_bytes: bytes | None = None):
+    rows = _build_yooai_report_rows(data)
+    try:
+        width, height = 1080, 1480
+        report = Image.new("RGB", (width, height), (8, 16, 34))
+        draw = ImageDraw.Draw(report)
+
+        for y in range(height):
+            ratio = y / max(1, height - 1)
+            color = (
+                int(10 + (22 * ratio)),
+                int(18 + (20 * ratio)),
+                int(34 + (40 * ratio)),
+            )
+            draw.line((0, y, width, y), fill=color)
+
+        title_font = _load_report_font(44, bold=True)
+        sub_font = _load_report_font(24, bold=False)
+        section_font = _load_report_font(34, bold=True)
+        label_font = _load_report_font(26, bold=True)
+        value_font = _load_report_font(28, bold=False)
+        small_font = _load_report_font(21, bold=False)
+
+        accent = _report_accent_color(rows)
+        header_box = (36, 28, width - 36, 120)
+        draw.rounded_rectangle(header_box, radius=24, fill=(12, 29, 60), outline=(72, 123, 190), width=2)
+        draw.text((64, 52), "YOOAI PREDICTION REPORT", fill=(232, 243, 255), font=title_font)
+        draw.text((64, 96), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), fill=(144, 176, 214), font=small_font)
+
+        preview_box = (48, 168, width - 48, 620)
+        draw.rounded_rectangle(preview_box, radius=24, fill=(16, 28, 52), outline=(62, 85, 122), width=2)
+        preview_available = False
+        if source_image_bytes:
+            try:
+                with Image.open(io.BytesIO(source_image_bytes)) as src:
+                    src = src.convert("RGB")
+                    inner_w = preview_box[2] - preview_box[0] - 28
+                    inner_h = preview_box[3] - preview_box[1] - 28
+                    scale = min(inner_w / max(1, src.width), inner_h / max(1, src.height))
+                    new_w = max(1, int(src.width * scale))
+                    new_h = max(1, int(src.height * scale))
+                    src = src.resize((new_w, new_h), Image.LANCZOS)
+                    x = preview_box[0] + ((preview_box[2] - preview_box[0] - new_w) // 2)
+                    y = preview_box[1] + ((preview_box[3] - preview_box[1] - new_h) // 2)
+                    report.paste(src, (x, y))
+                    preview_available = True
+            except Exception as e:
+                logging.warning(f"Failed to render source image preview for YooAI report: {e}")
+        if not preview_available:
+            draw.text((preview_box[0] + 28, preview_box[1] + 26), "Chart preview unavailable", fill=(168, 189, 216), font=sub_font)
+
+        details_box = (48, 656, width - 48, height - 48)
+        draw.rounded_rectangle(details_box, radius=26, fill=(23, 34, 58), outline=accent, width=3)
+        draw.text((78, 694), "AI SIGNAL DETAILS", fill=(228, 242, 255), font=section_font)
+
+        label_x = 86
+        value_x = 392
+        row_y = 754
+        max_value_chars = 34
+        for label, value in rows:
+            if row_y > details_box[3] - 92:
+                break
+            label_text = str(label).strip().upper()
+            if len(label_text) > 20:
+                label_text = label_text[:20] + "..."
+            draw.text((label_x, row_y), label_text, fill=(158, 190, 225), font=label_font)
+            wrapped_values = _split_report_lines(str(value), max_chars=max_value_chars, max_lines=2)
+            for idx, line in enumerate(wrapped_values):
+                draw.text((value_x, row_y + (idx * 36)), line, fill=(242, 247, 255), font=value_font)
+            row_y += (36 * len(wrapped_values)) + 16
+            draw.line((label_x, row_y, details_box[2] - 40, row_y), fill=(58, 78, 112), width=1)
+            row_y += 18
+
+        draw.text((78, details_box[3] - 34), "Generated by YOOAI", fill=(132, 164, 198), font=small_font)
+
+        buffer = io.BytesIO()
+        report.save(buffer, format="PNG")
+        buffer.seek(0)
+        buffer.name = "yooai_prediction_report.png"
+        return buffer
+    except Exception as e:
+        logging.warning(f"Failed to build YooAI report image: {e}")
+        return None
+
 
 # ================= FUTURE SIGNAL SUBPROCESS =================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1785,6 +1966,7 @@ async def user_media_handler(update, context):
             await update.message.reply_text(_build_usage_after_consume_message(FEATURE_YOOAI, remaining, reset_ts))
             loading_msg = None
             data = None
+            source_image_bytes = None
             try:
                 loading_msg = await send_temporary_loading_gif(
                     update.message,
@@ -1799,7 +1981,8 @@ async def user_media_handler(update, context):
                     tg_file = await image_doc.get_file()
                     filename = image_doc.file_name or f"{image_doc.file_unique_id}.jpg"
                 file_bytes = await tg_file.download_as_bytearray()
-                data = fetch_imageai_price(bytes(file_bytes), filename)
+                source_image_bytes = bytes(file_bytes)
+                data = fetch_imageai_price(source_image_bytes, filename)
             except Exception:
                 data = None
             finally:
@@ -1810,6 +1993,15 @@ async def user_media_handler(update, context):
                         logging.warning(f"Failed to delete YooAI loading GIF message: {e}")
 
             if data:
+                report_photo = build_yooai_report_image(data, source_image_bytes=source_image_bytes)
+                if report_photo:
+                    try:
+                        await update.message.reply_photo(
+                            photo=report_photo,
+                            caption="YOOAI Prediction Report",
+                        )
+                    except Exception as e:
+                        logging.warning(f"Failed to send YooAI report image: {e}")
                 ai_reply = build_ai_reply(data)
                 try:
                     await update.message.reply_text(ai_reply, parse_mode="HTML")
