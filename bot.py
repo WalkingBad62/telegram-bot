@@ -139,6 +139,12 @@ FEATURE_LABELS = {
     FEATURE_YOOAI: "YOOAI Prediction",
 }
 USAGE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_usage.db")
+YOOAI_STATIC_REPORT_IMAGE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "uploads",
+    "start-images",
+    "yooai_static_report.jpeg",
+)
 try:
     YOOAI_PENDING_TTL_SECONDS = int(os.getenv("YOOAI_PENDING_TTL_SECONDS", "1800") or "1800")
 except ValueError:
@@ -2033,15 +2039,27 @@ async def user_media_handler(update, context):
                         logging.warning(f"Failed to delete YooAI loading GIF message: {e}")
 
             if data:
-                report_photo = build_yooai_report_image(data, source_image_bytes=source_image_bytes)
-                if report_photo:
+                sent_report = False
+                if os.path.isfile(YOOAI_STATIC_REPORT_IMAGE_PATH):
                     try:
-                        await update.message.reply_photo(
-                            photo=report_photo,
-                            caption="YOOAI Prediction Report",
-                        )
+                        with open(YOOAI_STATIC_REPORT_IMAGE_PATH, "rb") as static_report_photo:
+                            await update.message.reply_photo(
+                                photo=static_report_photo,
+                                caption="YOOAI Prediction Report",
+                            )
+                            sent_report = True
                     except Exception as e:
-                        logging.warning(f"Failed to send YooAI report image: {e}")
+                        logging.warning(f"Failed to send static YooAI report image: {e}")
+                if not sent_report:
+                    report_photo = build_yooai_report_image(data, source_image_bytes=source_image_bytes)
+                    if report_photo:
+                        try:
+                            await update.message.reply_photo(
+                                photo=report_photo,
+                                caption="YOOAI Prediction Report",
+                            )
+                        except Exception as e:
+                            logging.warning(f"Failed to send YooAI report image: {e}")
                 ai_reply = build_ai_reply(data)
                 try:
                     await update.message.reply_text(ai_reply, parse_mode="HTML")
