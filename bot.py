@@ -12,6 +12,7 @@ import html as html_mod
 import json
 import logging
 import os
+import random
 import re
 import sqlite3
 import subprocess
@@ -46,8 +47,8 @@ if YOOAI_LOADING_GIF_SECONDS < 0.2:
     YOOAI_LOADING_GIF_SECONDS = 0.2
 
 _DARK_LOADING_GIF_CACHE: dict[str, bytes] = {}
-# Set to 0 for unlimited; use a positive number to cap displayed signals.
-MAX_FUTURESIGNAL_DISPLAY = 0
+# Randomly display up to this many future signals.
+MAX_FUTURESIGNAL_DISPLAY = 7
 
 # ================= ADMIN =================
 ADMIN_IDS = [8544013336]
@@ -1232,8 +1233,11 @@ async def run_future_signal_script(pair: str, timeframe: int) -> str:
             # All other lines are skipped as noise.
 
         if signal_rows:
-            if MAX_FUTURESIGNAL_DISPLAY > 0:
-                signal_rows = signal_rows[:MAX_FUTURESIGNAL_DISPLAY]
+            if MAX_FUTURESIGNAL_DISPLAY > 0 and len(signal_rows) > MAX_FUTURESIGNAL_DISPLAY:
+                selected_indices = sorted(
+                    random.sample(range(len(signal_rows)), MAX_FUTURESIGNAL_DISPLAY)
+                )
+                signal_rows = [signal_rows[idx] for idx in selected_indices]
             safe_pair = html_mod.escape(str(pair))
             count = len(signal_rows)
             header = f"\U0001F4C8 <b>Future Signals \u2014 {safe_pair} (M{timeframe})</b>\n\n"
