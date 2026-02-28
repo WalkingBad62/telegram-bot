@@ -711,6 +711,69 @@
                 </table>
             </div>
         </div>
+        <!-- ================= USER LIMITS MANAGER ================= -->
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
+                    <h2>User Daily Limits</h2>
+                    <div class="muted">Set custom daily usage limits per user for Future Signal, YOOAI, or all features.</div>
+                </div>
+                <div class="tag" style="background: rgba(239, 68, 68, 0.12); color: #b91c1c;">Limits</div>
+            </div>
+            <form id="addLimitForm" class="row g-2 align-items-end mb-4">
+                <div class="col-12 col-lg-3">
+                    <label class="form-label">Telegram ID</label>
+                    <select id="limitUserSelect" class="form-select">
+                        <option value="">-- Select user or type ID --</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-2">
+                    <label class="form-label">Or enter ID</label>
+                    <input type="number" id="limitTelegramIdInput" class="form-control" placeholder="e.g. 123456789" min="1">
+                </div>
+                <div class="col-12 col-lg-3">
+                    <label class="form-label">Feature</label>
+                    <select id="limitFeatureSelect" class="form-select">
+                        <option value="__all__">All Features</option>
+                        <option value="future_signal">Future Signal</option>
+                        <option value="yooai">YOOAI / ImageAI</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-2">
+                    <label class="form-label">Daily Limit</label>
+                    <input type="number" id="limitDailyInput" class="form-control" placeholder="e.g. 10" min="1" required>
+                </div>
+                <div class="col-12 col-lg-2">
+                    <button type="submit" class="btn btn-success w-100">Set Limit</button>
+                </div>
+            </form>
+            <div id="limitResult" style="font-weight: 600; margin-bottom: 10px; display: none;"></div>
+            <div class="mb-3">
+                <label class="form-label" style="font-weight:600;">Filter by user:</label>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <select id="limitFilterUser" class="form-select" style="max-width:280px;">
+                        <option value="">All users</option>
+                    </select>
+                    <button type="button" id="limitFilterBtn" class="btn btn-outline-primary btn-sm">Filter</button>
+                    <button type="button" id="limitClearFilterBtn" class="btn btn-outline-secondary btn-sm">Show All</button>
+                </div>
+            </div>
+            <div class="table-section">
+                <table id="limitTable" class="table table-bordered table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th>Telegram ID</th>
+                            <th>Username</th>
+                            <th>Feature</th>
+                            <th>Daily Limit</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="limitDefaultInfo" class="muted mt-2" style="font-size:13px;"></div>
+        </div>
     </div>
     </div>
     <div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
@@ -1622,6 +1685,192 @@
                 document.getElementById('result').innerText = `Some failed: ${JSON.stringify(result.failed)}`;
             } else {
                 document.getElementById('result').innerText = JSON.stringify(result);
+            }
+        };
+
+        // ================= USER LIMITS MANAGER =================
+        let allUsersCache = [];
+        function getUsernameById(tid) {
+            const u = allUsersCache.find(u => String(u.telegram_id) === String(tid));
+            return u ? (u.username || '') : '';
+        }
+        function populateLimitUserSelects() {
+            const sel = document.getElementById('limitUserSelect');
+            const filterSel = document.getElementById('limitFilterUser');
+            sel.innerHTML = '<option value="">-- Select user --</option>';
+            filterSel.innerHTML = '<option value="">All users</option>';
+            allUsersCache.forEach(u => {
+                const label = u.username ? `${u.username} (${u.telegram_id})` : String(u.telegram_id);
+                const o1 = document.createElement('option');
+                o1.value = u.telegram_id;
+                o1.textContent = label;
+                sel.appendChild(o1);
+                const o2 = document.createElement('option');
+                o2.value = u.telegram_id;
+                o2.textContent = label;
+                filterSel.appendChild(o2);
+            });
+        }
+        async function refreshUsersCache() {
+            try {
+                const res = await fetch('/users');
+                if (res.ok) {
+                    const data = await res.json();
+                    allUsersCache = data.users || [];
+                    populateLimitUserSelects();
+                }
+            } catch(e) {}
+        }
+        refreshUsersCache();
+
+        const limitResult = document.getElementById('limitResult');
+        function showLimitMsg(msg, isError) {
+            limitResult.textContent = msg;
+            limitResult.style.color = isError ? '#b91c1c' : '#166534';
+            limitResult.style.display = 'block';
+            setTimeout(() => { limitResult.style.display = 'none'; }, 4000);
+        }
+
+        async function loadLimits(filterTid) {
+            try {
+                let url = '/user-limits';
+                if (filterTid) url += `?telegram_id=${filterTid}`;
+                const res = await fetch(url);
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                const tbody = document.getElementById('limitTable').querySelector('tbody');
+                tbody.innerHTML = '';
+                const defaultInfo = document.getElementById('limitDefaultInfo');
+                defaultInfo.textContent = `Default daily limit (when no custom limit is set): ${data.default_limit} per day`;
+                (data.limits || []).forEach(lim => {
+                    const tr = document.createElement('tr');
+                    // Telegram ID
+                    const tdId = document.createElement('td');
+                    tdId.textContent = lim.telegram_id;
+                    tr.appendChild(tdId);
+                    // Username
+                    const tdUser = document.createElement('td');
+                    tdUser.textContent = getUsernameById(lim.telegram_id);
+                    tdUser.style.color = 'var(--muted)';
+                    tr.appendChild(tdUser);
+                    // Feature
+                    const tdFeat = document.createElement('td');
+                    tdFeat.textContent = lim.feature_label || lim.feature;
+                    tr.appendChild(tdFeat);
+                    // Daily Limit (editable)
+                    const tdLimit = document.createElement('td');
+                    const inputLimit = document.createElement('input');
+                    inputLimit.type = 'number';
+                    inputLimit.value = lim.daily_limit;
+                    inputLimit.min = 1;
+                    inputLimit.className = 'form-control';
+                    inputLimit.style.width = '90px';
+                    tdLimit.appendChild(inputLimit);
+                    tr.appendChild(tdLimit);
+                    // Actions
+                    const tdAct = document.createElement('td');
+                    const wrap = document.createElement('div');
+                    wrap.className = 'pair-actions';
+                    const saveBtn = document.createElement('button');
+                    saveBtn.className = 'btn btn-sm btn-primary';
+                    saveBtn.textContent = 'Save';
+                    saveBtn.onclick = async () => {
+                        const newVal = parseInt(inputLimit.value, 10);
+                        if (!newVal || newVal < 1) { showLimitMsg('Limit must be at least 1', true); return; }
+                        const r = await fetch('/user-limits', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                            body: JSON.stringify({ telegram_id: lim.telegram_id, feature: lim.feature, daily_limit: newVal })
+                        });
+                        if (r.ok) {
+                            showLimitMsg('Limit updated!', false);
+                            loadLimits(document.getElementById('limitFilterUser').value);
+                        } else {
+                            const d = await r.json();
+                            showLimitMsg(d.detail || 'Error', true);
+                        }
+                    };
+                    wrap.appendChild(saveBtn);
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'btn btn-sm btn-danger';
+                    delBtn.textContent = 'Remove';
+                    delBtn.style.marginLeft = '6px';
+                    delBtn.onclick = async () => {
+                        if (!confirm(`Remove custom limit for user ${lim.telegram_id} (${lim.feature_label})?`)) return;
+                        const r = await fetch(`/user-limits/${lim.telegram_id}/${encodeURIComponent(lim.feature)}`, {
+                            method: 'DELETE',
+                            headers: { 'X-CSRF-Token': csrfToken }
+                        });
+                        if (r.ok) {
+                            showLimitMsg('Limit removed. User will use default limit.', false);
+                            loadLimits(document.getElementById('limitFilterUser').value);
+                        } else {
+                            const d = await r.json();
+                            showLimitMsg(d.detail || 'Error', true);
+                        }
+                    };
+                    wrap.appendChild(delBtn);
+                    tdAct.appendChild(wrap);
+                    tr.appendChild(tdAct);
+                    tbody.appendChild(tr);
+                });
+                if ((data.limits || []).length === 0) {
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 5;
+                    td.textContent = filterTid
+                        ? 'No custom limits set for this user. Default limit applies.'
+                        : 'No custom limits set yet. All users use the default limit.';
+                    td.style.textAlign = 'center';
+                    td.style.color = 'var(--muted)';
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                }
+            } catch (e) {
+                console.error('Error loading limits:', e);
+            }
+        }
+        loadLimits('');
+
+        document.getElementById('limitFilterBtn').onclick = () => {
+            loadLimits(document.getElementById('limitFilterUser').value);
+        };
+        document.getElementById('limitClearFilterBtn').onclick = () => {
+            document.getElementById('limitFilterUser').value = '';
+            loadLimits('');
+        };
+
+        // Sync user select -> manual ID input
+        document.getElementById('limitUserSelect').onchange = function() {
+            document.getElementById('limitTelegramIdInput').value = this.value;
+        };
+
+        document.getElementById('addLimitForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const selVal = document.getElementById('limitUserSelect').value;
+            const manualVal = document.getElementById('limitTelegramIdInput').value.trim();
+            const tid = manualVal || selVal;
+            if (!tid) { showLimitMsg('Please select a user or enter a Telegram ID.', true); return; }
+            const feature = document.getElementById('limitFeatureSelect').value;
+            const dailyLimit = parseInt(document.getElementById('limitDailyInput').value, 10);
+            if (!dailyLimit || dailyLimit < 1) { showLimitMsg('Daily limit must be at least 1.', true); return; }
+            const res = await fetch('/user-limits', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ telegram_id: parseInt(tid, 10), feature, daily_limit: dailyLimit })
+            });
+            if (res.ok) {
+                const d = await res.json();
+                showLimitMsg(`Limit set: User ${d.telegram_id} → ${d.feature_label}: ${d.daily_limit}/day`, false);
+                document.getElementById('limitDailyInput').value = '';
+                loadLimits(document.getElementById('limitFilterUser').value);
+            } else {
+                const d = await res.json();
+                showLimitMsg(d.detail || 'Error setting limit', true);
             }
         };
     </script>

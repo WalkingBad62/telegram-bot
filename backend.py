@@ -22,6 +22,17 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=False)
 
 # --- Configuration ---
 DB_NAME = os.getenv("DATABASE_URL", "bot_users.db")
+USAGE_DB_PATH = os.path.join(BASE_DIR, "bot_usage.db")
+FEATURE_USAGE_LIMIT_DEFAULT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
+if FEATURE_USAGE_LIMIT_DEFAULT < 1:
+    FEATURE_USAGE_LIMIT_DEFAULT = 3
+FEATURE_LIMIT_SCOPE_ALL = "__all__"
+FEATURE_LABELS = {
+    "future_signal": "Future Signal",
+    "yooai": "YOOAI / ImageAI",
+    FEATURE_LIMIT_SCOPE_ALL: "All Features",
+}
+VALID_LIMIT_FEATURES = {"future_signal", "yooai", FEATURE_LIMIT_SCOPE_ALL}
 BOT_MODE = (os.getenv("BOT_MODE", "currency") or "currency").strip().lower()
 if BOT_MODE not in ("currency", "trading"):
     BOT_MODE = "currency"
@@ -1416,6 +1427,131 @@ def delete_signal_pair(pair_id: int, request: Request):
         c.execute("DELETE FROM signal_pairs WHERE id=?", (pair_id,))
         conn.commit()
     return {"ok": True}
+
+# --- User Limits Management (uses bot_usage.db) ---
+def _init_usage_db_tables():
+    """Ensure the feature_user_limits table exists in bot_usage.db."""
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feature_user_limits (
+                telegram_id INTEGER NOT NULL,
+                feature TEXT NOT NULL,
+                daily_limit INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (telegram_id, feature)
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feature_user_limits_user_feature
+            ON feature_user_limits (telegram_id, feature)
+            """
+        )
+        conn.commit()
+
+_init_usage_db_tables()
+
+def _feature_label(feature: str) -> str:
+    return FEATURE_LABELS.get(feature, feature)
+
+
+@app.get("/user-limits")
+async def list_user_limits(request: Request):
+    """List all custom user limits, optionally filtered by telegram_id."""
+    require_login(request)
+    telegram_id = request.query_params.get("telegram_id", "").strip()
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        if telegram_id:
+            try:
+                tid = int(telegram_id)
+            except ValueError:
+                return {"limits": [], "default_limit": FEATURE_USAGE_LIMIT_DEFAULT}
+            c.execute(
+                "SELECT telegram_id, feature, daily_limit, updated_at FROM feature_user_limits WHERE telegram_id = ? ORDER BY feature",
+                (tid,),
+            )
+        else:
+            c.execute(
+                "SELECT telegram_id, feature, daily_limit, updated_at FROM feature_user_limits ORDER BY telegram_id, feature"
+            )
+        rows = c.fetchall()
+    limits = []
+    for row in rows:
+        limits.append({
+            "telegram_id": row[0],
+            "feature": row[1],
+            "feature_label": _feature_label(row[1]),
+            "daily_limit": row[2],
+            "updated_at": row[3],
+        })
+    return {"limits": limits, "default_limit": FEATURE_USAGE_LIMIT_DEFAULT, "features": {k: v for k, v in FEATURE_LABELS.items()}}
+
+
+@app.post("/user-limits")
+async def set_user_limit(request: Request):
+    """Set a custom daily limit for a user + feature scope."""
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    try:
+        telegram_id = int(data.get("telegram_id", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid telegram_id")
+    if telegram_id <= 0:
+        raise HTTPException(status_code=400, detail="telegram_id is required")
+    feature = (data.get("feature") or "").strip()
+    if feature not in VALID_LIMIT_FEATURES:
+        raise HTTPException(status_code=400, detail=f"Invalid feature. Must be one of: {', '.join(sorted(VALID_LIMIT_FEATURES))}")
+    try:
+        daily_limit = int(data.get("daily_limit", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid daily_limit")
+    if daily_limit < 1:
+        raise HTTPException(status_code=400, detail="daily_limit must be at least 1")
+    now_ts = int(datetime.utcnow().timestamp())
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO feature_user_limits (telegram_id, feature, daily_limit, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(telegram_id, feature) DO UPDATE SET
+                daily_limit = excluded.daily_limit,
+                updated_at = excluded.updated_at
+            """,
+            (telegram_id, feature, daily_limit, now_ts),
+        )
+        conn.commit()
+    return {
+        "ok": True,
+        "telegram_id": telegram_id,
+        "feature": feature,
+        "feature_label": _feature_label(feature),
+        "daily_limit": daily_limit,
+    }
+
+
+@app.delete("/user-limits/{telegram_id}/{feature}")
+async def delete_user_limit(telegram_id: int, feature: str, request: Request):
+    """Remove a custom limit for a specific user + feature."""
+    require_login(request)
+    require_csrf(request)
+    if feature not in VALID_LIMIT_FEATURES:
+        raise HTTPException(status_code=400, detail="Invalid feature")
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            "DELETE FROM feature_user_limits WHERE telegram_id = ? AND feature = ?",
+            (telegram_id, feature),
+        )
+        deleted = c.rowcount or 0
+        conn.commit()
+    return {"ok": True, "deleted": deleted}
+
 
 # --- Serve Admin Panel (Protected) ---
 @app.get("/admin")
