@@ -621,60 +621,61 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
-                    <h2>Welcome Image</h2>
-                    <div class="muted">Set the image shown with the second /start welcome message.</div>
+                    <h2>Welcome &amp; Menu Images</h2>
+                    <div class="muted">Manage bot images for /start welcome and /menu commands.</div>
                 </div>
                 <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
             </div>
-            <form id="welcomeImageForm" class="form-section">
-                <div class="mb-3">
-                    <label class="form-label">Image URL</label>
-                    <input type="url" id="welcomeImageInput" class="form-control" placeholder="https://example.com/welcome.jpg">
-                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to reuse the promo image.</div>
+            <div class="row g-4">
+                <!-- Welcome Image column -->
+                <div class="col-md-6">
+                    <h5 class="mb-3" style="font-weight:600;color:#e2e8f0;">Welcome Image</h5>
+                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
+                    <form id="welcomeImageForm" class="form-section">
+                        <div class="mb-3">
+                            <label class="form-label">Image URL</label>
+                            <input type="url" id="welcomeImageInput" class="form-control" placeholder="https://example.com/welcome.jpg">
+                            <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to reuse the promo image.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload From Device</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <input type="file" id="welcomeImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                                <button type="button" id="welcomeImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                            </div>
+                        </div>
+                        <div id="welcomeImagePreview" class="mb-3" style="display:none;">
+                            <img id="welcomeImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Welcome Image</button>
+                        <div id="welcomeImageResult" class="mt-2"></div>
+                    </form>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Upload From Device</label>
-                    <div class="d-flex flex-wrap gap-2">
-                        <input type="file" id="welcomeImageFile" class="form-control" accept="image/*" style="max-width:360px;">
-                        <button type="button" id="welcomeImageUploadBtn" class="btn btn-outline-primary">Upload Welcome File</button>
-                    </div>
-                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
+                <!-- Menu Image column -->
+                <div class="col-md-6">
+                    <h5 class="mb-3" style="font-weight:600;color:#e2e8f0;">Menu Image</h5>
+                    <div class="muted mb-2" style="font-size:.85rem;">Shown only with the /menu command.</div>
+                    <form id="menuImageForm" class="form-section">
+                        <div class="mb-3">
+                            <label class="form-label">Image URL</label>
+                            <input type="url" id="menuImageInput" class="form-control" placeholder="https://example.com/menu.jpg">
+                            <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only menu.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload From Device</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <input type="file" id="menuImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                                <button type="button" id="menuImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                            </div>
+                        </div>
+                        <div id="menuImagePreview" class="mb-3" style="display:none;">
+                            <img id="menuImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Menu Image</button>
+                        <div id="menuImageResult" class="mt-2"></div>
+                    </form>
                 </div>
-                <div id="welcomeImagePreview" class="mb-3" style="display:none;">
-                    <img id="welcomeImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
-                </div>
-                <button type="submit" class="btn btn-primary">Save Welcome Image</button>
-                <div id="welcomeImageResult" class="mt-2"></div>
-            </form>
-        </div>
-        <div class="panel-card mt-4">
-            <div class="section-header">
-                <div>
-                    <h2>Menu Image</h2>
-                    <div class="muted">Set the image shown only with the /menu command.</div>
-                </div>
-                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
             </div>
-            <form id="menuImageForm" class="form-section">
-                <div class="mb-3">
-                    <label class="form-label">Image URL</label>
-                    <input type="url" id="menuImageInput" class="form-control" placeholder="https://example.com/menu.jpg">
-                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only menu.</div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Upload From Device</label>
-                    <div class="d-flex flex-wrap gap-2">
-                        <input type="file" id="menuImageFile" class="form-control" accept="image/*" style="max-width:360px;">
-                        <button type="button" id="menuImageUploadBtn" class="btn btn-outline-primary">Upload Menu File</button>
-                    </div>
-                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
-                </div>
-                <div id="menuImagePreview" class="mb-3" style="display:none;">
-                    <img id="menuImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
-                </div>
-                <button type="submit" class="btn btn-primary">Save Menu Image</button>
-                <div id="menuImageResult" class="mt-2"></div>
-            </form>
         </div>
         <div class="panel-card mt-4">
             <div class="section-header">
