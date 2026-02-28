@@ -36,7 +36,7 @@ except ValueError:
     IMAGEAI_TIMEOUT = 35.0
 YOOAI_LOADING_GIF_URL = os.getenv(
     "YOOAI_LOADING_GIF_URL",
-    "https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif",
+    "https://i.imgur.com/PLbsXGU.gif",
 ).strip()
 USE_DARK_LOADING_GIF = (os.getenv("USE_DARK_LOADING_GIF", "1") or "1").strip().lower() not in ("0", "false", "no")
 try:
@@ -133,7 +133,7 @@ CURRENCY_PAIR_DISPLAY = {"AUDCAD_OTC": "AUDCAD_otc"}
 FEATURE_USAGE_LIMIT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT < 1:
     FEATURE_USAGE_LIMIT = 3
-FEATURE_WINDOW_SECONDS = 0 * 1 * 0
+FEATURE_WINDOW_SECONDS = 24 * 60 * 60
 FEATURE_FUTURESIGNAL = "future_signal"
 FEATURE_YOOAI = "yooai"
 FEATURE_LIMIT_SCOPE_ALL = "__all__"
