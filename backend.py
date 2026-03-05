@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from datetime import datetime, timedelta
+import asyncio
 import hashlib
 import sqlite3
 import os
@@ -70,6 +71,20 @@ try:
     TRADING_API_RETRY_DELAY = float(os.getenv("TRADING_API_RETRY_DELAY", "1.0"))
 except ValueError:
     TRADING_API_RETRY_DELAY = 1.0
+try:
+    TELEGRAM_API_TIMEOUT = float(os.getenv("TELEGRAM_API_TIMEOUT", "15"))
+except ValueError:
+    TELEGRAM_API_TIMEOUT = 15.0
+if TELEGRAM_API_TIMEOUT <= 0:
+    TELEGRAM_API_TIMEOUT = 15.0
+try:
+    BULK_SEND_CONCURRENCY = int(os.getenv("BULK_SEND_CONCURRENCY", "8"))
+except ValueError:
+    BULK_SEND_CONCURRENCY = 8
+if BULK_SEND_CONCURRENCY < 1:
+    BULK_SEND_CONCURRENCY = 1
+if BULK_SEND_CONCURRENCY > 25:
+    BULK_SEND_CONCURRENCY = 25
 
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
@@ -895,6 +910,98 @@ async def reply_get(request: Request):
     else:
         return {"reply": "Sorry, I didn't understand 😅"}
 
+def _telegram_post(endpoint: str, data: dict, files: Optional[dict] = None):
+    return requests.post(
+        f"{TELEGRAM_API_URL}/{endpoint}",
+        data=data,
+        files=files,
+        timeout=TELEGRAM_API_TIMEOUT,
+    )
+
+
+def _send_bulk_to_single_user(
+    user_id: int,
+    message: str,
+    prepared_images: List[dict],
+    prepared_videos: List[dict],
+) -> dict:
+    failed = []
+    has_success = False
+    text = (message or "").strip()
+
+    if text:
+        try:
+            resp = _telegram_post("sendMessage", {"chat_id": user_id, "text": text})
+            if resp.status_code == 200:
+                has_success = True
+            else:
+                failed.append({"user_id": user_id, "error": resp.text, "type": "message"})
+        except Exception as e:
+            failed.append({"user_id": user_id, "error": str(e), "type": "message"})
+
+    for image in prepared_images:
+        try:
+            files = {"photo": (image["filename"], image["content"], image["content_type"])}
+            resp = _telegram_post("sendPhoto", {"chat_id": user_id}, files=files)
+            if resp.status_code == 200:
+                has_success = True
+            else:
+                failed.append({
+                    "user_id": user_id,
+                    "error": resp.text,
+                    "type": "image",
+                    "filename": image["filename"],
+                })
+        except Exception as e:
+            failed.append({
+                "user_id": user_id,
+                "error": str(e),
+                "type": "image",
+                "filename": image["filename"],
+            })
+
+    for video in prepared_videos:
+        try:
+            files = {"video": (video["filename"], video["content"], video["content_type"])}
+            resp = _telegram_post("sendVideo", {"chat_id": user_id}, files=files)
+            if resp.status_code == 200:
+                has_success = True
+            else:
+                failed.append({
+                    "user_id": user_id,
+                    "error": resp.text,
+                    "type": "video",
+                    "filename": video["filename"],
+                })
+        except Exception as e:
+            failed.append({
+                "user_id": user_id,
+                "error": str(e),
+                "type": "video",
+                "filename": video["filename"],
+            })
+
+    return {"user_id": user_id, "success": has_success, "failed": failed}
+
+
+def _parse_user_ids(raw_user_ids: str) -> List[int]:
+    user_id_list = []
+    seen = set()
+    for token in (raw_user_ids or "").split(","):
+        value = (token or "").strip()
+        if not value:
+            continue
+        try:
+            uid = int(value)
+        except ValueError:
+            continue
+        if uid in seen:
+            continue
+        seen.add(uid)
+        user_id_list.append(uid)
+    return user_id_list
+
+
 # --- Send message, images, and videos to multiple users ---
 @app.post("/send/all/bulk")
 async def send_all_bulk(
@@ -902,56 +1009,95 @@ async def send_all_bulk(
     user_ids: str = Form(...),
     message: str = Form(""),
     images: List[UploadFile] = File([]),
-    videos: List[UploadFile] = File([])
+    videos: List[UploadFile] = File([]),
 ):
     require_login(request)
     require_csrf(request)
     if not TELEGRAM_BOT_TOKEN:
-        return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
-    # user_ids is a comma-separated string from the form
-    user_id_list = [int(uid) for uid in user_ids.split(",") if uid.strip()]
-    sent = []
+        return JSONResponse(
+            {"success": False, "error": "TELEGRAM_BOT_TOKEN not set in environment"},
+            status_code=500,
+        )
+
+    user_id_list = _parse_user_ids(user_ids)
+    if not user_id_list:
+        return JSONResponse(
+            {"success": False, "error": "No valid user IDs provided."},
+            status_code=400,
+        )
+
+    prepared_images = []
+    for image in images or []:
+        filename = (image.filename or "").strip()
+        if not filename:
+            continue
+        await image.seek(0)
+        file_bytes = await image.read()
+        if not file_bytes:
+            continue
+        prepared_images.append(
+            {
+                "filename": filename,
+                "content": file_bytes,
+                "content_type": image.content_type or "application/octet-stream",
+            }
+        )
+
+    prepared_videos = []
+    for video in videos or []:
+        filename = (video.filename or "").strip()
+        if not filename:
+            continue
+        await video.seek(0)
+        file_bytes = await video.read()
+        if not file_bytes:
+            continue
+        prepared_videos.append(
+            {
+                "filename": filename,
+                "content": file_bytes,
+                "content_type": video.content_type or "application/octet-stream",
+            }
+        )
+
+    text = (message or "").strip()
+    if not text and not prepared_images and not prepared_videos:
+        return JSONResponse(
+            {"success": False, "error": "Please provide a message, image, or video."},
+            status_code=400,
+        )
+
+    semaphore = asyncio.Semaphore(BULK_SEND_CONCURRENCY)
+
+    async def _send(uid: int):
+        async with semaphore:
+            return await asyncio.to_thread(
+                _send_bulk_to_single_user,
+                uid,
+                text,
+                prepared_images,
+                prepared_videos,
+            )
+
+    results = await asyncio.gather(*[_send(uid) for uid in user_id_list])
+    sent = [entry["user_id"] for entry in results if entry.get("success")]
     failed = []
-    for user_id in user_id_list:
-        # Send message if provided
-        if message:
-            try:
-                resp = requests.post(f"{TELEGRAM_API_URL}/sendMessage", data={"chat_id": user_id, "text": message})
-                if resp.status_code == 200:
-                    sent.append(user_id)
-                else:
-                    failed.append({"user_id": user_id, "error": resp.text, "type": "message"})
-            except Exception as e:
-                failed.append({"user_id": user_id, "error": str(e), "type": "message"})
-        # Send images if provided
-        for image in images:
-            try:
-                await image.seek(0)
-                file_bytes = await image.read()
-                files = {"photo": (image.filename, file_bytes)}
-                data = {"chat_id": user_id}
-                resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", data=data, files=files)
-                if resp.status_code == 200:
-                    sent.append(user_id)
-                else:
-                    failed.append({"user_id": user_id, "error": resp.text, "type": "image"})
-            except Exception as e:
-                failed.append({"user_id": user_id, "error": str(e), "type": "image"})
-        # Send videos if provided
-        for video in videos:
-            try:
-                await video.seek(0)
-                file_bytes = await video.read()
-                files = {"video": (video.filename, file_bytes)}
-                data = {"chat_id": user_id}
-                resp = requests.post(f"{TELEGRAM_API_URL}/sendVideo", data=data, files=files)
-                if resp.status_code == 200:
-                    sent.append(user_id)
-                else:
-                    failed.append({"user_id": user_id, "error": resp.text, "type": "video"})
-            except Exception as e:
-                failed.append({"user_id": user_id, "error": str(e), "type": "video"})
-    return JSONResponse({"success": True, "sent": list(set(sent)), "failed": failed})
+    for entry in results:
+        failed.extend(entry.get("failed", []))
+
+    return JSONResponse(
+        {
+            "success": True,
+            "sent": sent,
+            "failed": failed,
+            "total": len(user_id_list),
+            "requested": {
+                "text": bool(text),
+                "images": len(prepared_images),
+                "videos": len(prepared_videos),
+            },
+        }
+    )
 
 # --- Get all replies (public for bot) ---
 @app.get("/replies")

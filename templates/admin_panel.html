@@ -198,6 +198,51 @@
             font-size: 12px;
             margin-top: 6px;
         }
+        .selection-meta {
+            font-size: 12px;
+            color: #475569;
+            font-weight: 600;
+        }
+        .selection-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .selection-tools .btn {
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .user-search-input {
+            margin-top: 8px;
+        }
+        .emoji-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .emoji-btn {
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background: rgba(241, 245, 249, 0.8);
+            border-radius: 10px;
+            padding: 4px 8px;
+            line-height: 1.1;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+        .emoji-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.16);
+        }
+        .send-meta {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 6px;
+        }
         #result {
             font-weight: 600;
             color: #1e40af;
@@ -479,7 +524,15 @@
                 </div>
                 <form id="unifiedForm" enctype="multipart/form-data" class="form-section">
                     <div class="mb-3">
-                        <label class="form-label">Select Users:</label>
+                        <div class="d-flex align-items-center justify-content-between gap-2">
+                            <label class="form-label mb-0">Select Users:</label>
+                            <div id="userSelectionMeta" class="selection-meta">Total users: 0 | Selected: 0</div>
+                        </div>
+                        <input type="text" id="userSearchInput" class="form-control user-search-input" placeholder="Search by username or Telegram ID">
+                        <div class="selection-tools">
+                            <button type="button" id="selectVisibleUsersBtn" class="btn btn-outline-primary btn-sm">Select Visible</button>
+                            <button type="button" id="clearSelectedUsersBtn" class="btn btn-outline-secondary btn-sm">Clear Selected</button>
+                        </div>
                         <select id="unifiedUserSelect" name="user_ids" multiple class="form-select" style="height:120px;"></select>
                     </div>
                     <div class="form-check mb-3">
@@ -489,6 +542,16 @@
                     <div class="mb-3">
                         <label class="form-label">Message:</label>
                         <textarea id="unifiedMessage" name="message" class="form-control" rows="5" style="min-height:140px;"></textarea>
+                        <div id="emojiToolbar" class="emoji-toolbar" aria-label="Emoji shortcuts">
+                            <button type="button" class="emoji-btn" data-emoji="✅" title="Add check">✅</button>
+                            <button type="button" class="emoji-btn" data-emoji="🔥" title="Add fire">🔥</button>
+                            <button type="button" class="emoji-btn" data-emoji="🚀" title="Add rocket">🚀</button>
+                            <button type="button" class="emoji-btn" data-emoji="📈" title="Add chart">📈</button>
+                            <button type="button" class="emoji-btn" data-emoji="💸" title="Add money">💸</button>
+                            <button type="button" class="emoji-btn" data-emoji="🎯" title="Add target">🎯</button>
+                            <button type="button" class="emoji-btn" data-emoji="⚠️" title="Add warning">⚠️</button>
+                            <button type="button" class="emoji-btn" data-emoji="💬" title="Add chat">💬</button>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <div class="file-actions">
@@ -499,13 +562,13 @@
                         <div id="imageInputs" class="file-group">
                             <div class="file-row">
                                 <div class="file-input-wrap">
-                                    <input type="file" name="images" accept="image/*" class="form-control">
+                                    <input type="file" name="images" accept="image/*" class="form-control" multiple>
                                     <div class="file-name">No file selected</div>
                                 </div>
                                 <button type="button" class="remove-file-btn" disabled>Remove</button>
                             </div>
                         </div>
-                        <div class="file-hint">Add multiple images using the "Add more" button.</div>
+                        <div class="file-hint">Pick multiple images in one field or use "Add more".</div>
                     </div>
                     <div class="mb-3">
                         <div class="file-actions">
@@ -516,15 +579,16 @@
                         <div id="videoInputs" class="file-group">
                             <div class="file-row">
                                 <div class="file-input-wrap">
-                                    <input type="file" name="videos" accept="video/*" class="form-control">
+                                    <input type="file" name="videos" accept="video/*" class="form-control" multiple>
                                     <div class="file-name">No file selected</div>
                                 </div>
                                 <button type="button" class="remove-file-btn" disabled>Remove</button>
                             </div>
                         </div>
-                        <div class="file-hint">Add multiple videos using the "Add more" button.</div>
+                        <div class="file-hint">Pick multiple videos in one field or use "Add more".</div>
                     </div>
-                    <button type="submit" class="btn btn-primary">Send Broadcast</button>
+                    <button type="submit" id="unifiedSendBtn" class="btn btn-primary">Send Broadcast</button>
+                    <div id="sendMeta" class="send-meta"></div>
                 </form>
                 <div id="result" class="mt-3"></div>
                 <div id="authError" class="text-danger mt-2"></div>
@@ -701,7 +765,7 @@
                     <h2>User Overview</h2>
                     <div class="muted">Monitor active users and last seen times.</div>
                 </div>
-                <div class="tag" style="background: rgba(245, 158, 11, 0.12); color: #b45309;">Live</div>
+                <div id="userTotalBadge" class="tag" style="background: rgba(245, 158, 11, 0.12); color: #b45309;">Live: 0</div>
             </div>
             <div class="table-section">
                 <table id="userTable" class="table table-bordered table-striped align-middle">
@@ -824,9 +888,22 @@
         const addVideoBtn = document.getElementById('addVideoBtn');
         const clearImageBtn = document.getElementById('clearImageBtn');
         const clearVideoBtn = document.getElementById('clearVideoBtn');
+        const unifiedUserSelect = document.getElementById('unifiedUserSelect');
+        const unifiedAllUsers = document.getElementById('unifiedAllUsers');
+        const unifiedMessage = document.getElementById('unifiedMessage');
+        const unifiedSendBtn = document.getElementById('unifiedSendBtn');
+        const userSelectionMeta = document.getElementById('userSelectionMeta');
+        const userSearchInput = document.getElementById('userSearchInput');
+        const selectVisibleUsersBtn = document.getElementById('selectVisibleUsersBtn');
+        const clearSelectedUsersBtn = document.getElementById('clearSelectedUsersBtn');
+        const userTotalBadge = document.getElementById('userTotalBadge');
+        const sendMeta = document.getElementById('sendMeta');
+        const emojiToolbar = document.getElementById('emojiToolbar');
         const startMessageInput = document.getElementById('startMessageInput');
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
+        let allUsersCache = [];
+        let broadcastUsersCache = [];
 
         function truncateText(text, limit) {
             if (!text) return "";
@@ -854,12 +931,34 @@
             applyPreview();
         };
 
+        function insertAtCursor(textarea, value) {
+            if (!textarea || !value) {
+                return;
+            }
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? textarea.value.length;
+            const current = textarea.value || '';
+            textarea.value = `${current.slice(0, start)}${value}${current.slice(end)}`;
+            const nextPos = start + value.length;
+            textarea.focus();
+            textarea.setSelectionRange(nextPos, nextPos);
+        }
+
+        if (emojiToolbar) {
+            emojiToolbar.querySelectorAll('[data-emoji]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const emoji = btn.dataset.emoji || '';
+                    insertAtCursor(unifiedMessage, emoji);
+                });
+            });
+        }
+
         function addFileRow(container, accept) {
             const row = document.createElement('div');
             row.className = 'file-row';
             row.innerHTML = `
                 <div class="file-input-wrap">
-                    <input type="file" name="${accept === 'image' ? 'images' : 'videos'}" accept="${accept === 'image' ? 'image/*' : 'video/*'}" class="form-control">
+                    <input type="file" name="${accept === 'image' ? 'images' : 'videos'}" accept="${accept === 'image' ? 'image/*' : 'video/*'}" class="form-control" multiple>
                     <div class="file-name">No file selected</div>
                 </div>
                 <button type="button" class="remove-file-btn">Remove</button>
@@ -1376,17 +1475,25 @@
                     return;
                 }
                 const data = await res.json();
-                const select = document.getElementById('unifiedUserSelect');
-                select.innerHTML = '';
-                data.users.forEach(u => {
+                const users = data.users || [];
+                broadcastUsersCache = users;
+                allUsersCache = users;
+                const prevSelected = new Set(Array.from(unifiedUserSelect.selectedOptions || []).map(o => String(o.value)));
+
+                unifiedUserSelect.innerHTML = '';
+                users.forEach(u => {
                     const option = document.createElement('option');
                     option.value = u.telegram_id;
-                    option.text = u.username ? `${u.username} (${u.telegram_id})` : u.telegram_id;
-                    select.appendChild(option);
+                    option.text = u.username ? `${u.username} (${u.telegram_id})` : String(u.telegram_id);
+                    if (prevSelected.has(String(u.telegram_id))) {
+                        option.selected = true;
+                    }
+                    unifiedUserSelect.appendChild(option);
                 });
+
                 const tbody = document.getElementById('userTable').querySelector('tbody');
                 tbody.innerHTML = '';
-                data.users.forEach(u => {
+                users.forEach(u => {
                     const tr = document.createElement('tr');
                     const tdId = document.createElement('td');
                     tdId.textContent = u.telegram_id;
@@ -1399,10 +1506,84 @@
                     tr.appendChild(tdLast);
                     tbody.appendChild(tr);
                 });
+                if (typeof populateLimitUserSelects === 'function') {
+                    populateLimitUserSelects();
+                }
+                applyUserFilter();
+                updateUserSelectionMeta();
             } catch (e) {
                 document.getElementById('authError').innerText = 'Error loading users.';
             }
         }
+
+        function updateUserSelectionMeta() {
+            const total = broadcastUsersCache.length;
+            const selected = unifiedAllUsers.checked
+                ? total
+                : Array.from(unifiedUserSelect.selectedOptions || []).length;
+            if (userSelectionMeta) {
+                userSelectionMeta.textContent = `Total users: ${total} | Selected: ${selected}`;
+            }
+            if (userTotalBadge) {
+                userTotalBadge.textContent = `Live: ${total}`;
+            }
+        }
+
+        function applyUserFilter() {
+            if (!userSearchInput || !unifiedUserSelect) {
+                return;
+            }
+            const q = (userSearchInput.value || '').trim().toLowerCase();
+            Array.from(unifiedUserSelect.options).forEach(option => {
+                const text = `${option.text} ${option.value}`.toLowerCase();
+                option.hidden = Boolean(q) && !text.includes(q);
+            });
+        }
+
+        function setBroadcastSelectionState() {
+            const disabled = unifiedAllUsers.checked;
+            unifiedUserSelect.disabled = disabled;
+            if (userSearchInput) {
+                userSearchInput.disabled = disabled;
+            }
+            if (selectVisibleUsersBtn) {
+                selectVisibleUsersBtn.disabled = disabled;
+            }
+            if (clearSelectedUsersBtn) {
+                clearSelectedUsersBtn.disabled = disabled;
+            }
+            updateUserSelectionMeta();
+        }
+
+        if (unifiedAllUsers) {
+            unifiedAllUsers.onchange = setBroadcastSelectionState;
+        }
+        if (unifiedUserSelect) {
+            unifiedUserSelect.onchange = updateUserSelectionMeta;
+        }
+        if (userSearchInput) {
+            userSearchInput.addEventListener('input', applyUserFilter);
+        }
+        if (selectVisibleUsersBtn) {
+            selectVisibleUsersBtn.onclick = function() {
+                Array.from(unifiedUserSelect.options).forEach(option => {
+                    if (!option.hidden) {
+                        option.selected = true;
+                    }
+                });
+                updateUserSelectionMeta();
+            };
+        }
+        if (clearSelectedUsersBtn) {
+            clearSelectedUsersBtn.onclick = function() {
+                Array.from(unifiedUserSelect.options).forEach(option => {
+                    option.selected = false;
+                });
+                updateUserSelectionMeta();
+            };
+        }
+
+        setBroadcastSelectionState();
         loadUsers();
 
         // ================= SIGNAL PAIRS MANAGER =================
@@ -1642,21 +1823,28 @@
         };
         loadPairs();
 
-        document.getElementById('unifiedAllUsers').onchange = function() {
-            document.getElementById('unifiedUserSelect').disabled = this.checked;
-        };
         document.getElementById('unifiedForm').onsubmit = async function(e) {
             e.preventDefault();
-            const all = document.getElementById('unifiedAllUsers').checked;
+            const all = unifiedAllUsers.checked;
             let user_ids = [];
             if (!all) {
-                user_ids = Array.from(document.getElementById('unifiedUserSelect').selectedOptions).map(o => o.value);
+                user_ids = Array.from(unifiedUserSelect.selectedOptions).map(o => o.value);
                 if (user_ids.length === 0) {
                     document.getElementById('result').innerText = 'Please select at least one user or choose All Users.';
                     return;
                 }
+            } else {
+                user_ids = broadcastUsersCache.map(u => String(u.telegram_id));
+                if (user_ids.length === 0) {
+                    await loadUsers();
+                    user_ids = broadcastUsersCache.map(u => String(u.telegram_id));
+                }
+                if (user_ids.length === 0) {
+                    document.getElementById('result').innerText = 'No users found in list.';
+                    return;
+                }
             }
-            const message = document.getElementById('unifiedMessage').value;
+            const message = unifiedMessage.value;
             const imageFiles = [];
             imageInputs.querySelectorAll('input[type="file"]').forEach(input => {
                 Array.from(input.files).forEach(file => imageFiles.push(file));
@@ -1671,26 +1859,58 @@
             }
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('user_ids', all ? (await fetch('/users').then(r=>r.json())).users.map(u=>u.telegram_id).join(',') : user_ids.join(','));
+            formData.append('user_ids', user_ids.join(','));
             for (let i = 0; i < imageFiles.length; i++) {
                 formData.append('images', imageFiles[i]);
             }
             for (let i = 0; i < videoFiles.length; i++) {
                 formData.append('videos', videoFiles[i]);
             }
-            const res = await fetch('/send/all/bulk', { method: 'POST', headers: { 'X-CSRF-Token': csrfToken }, body: formData });
-            let result = await res.json();
-            if (result.success) {
-                document.getElementById('result').innerText = ` Sent to ${result.sent.length} user(s).`;
-            } else if (result.failed && result.failed.length > 0) {
-                document.getElementById('result').innerText = `Some failed: ${JSON.stringify(result.failed)}`;
-            } else {
-                document.getElementById('result').innerText = JSON.stringify(result);
+            const resultEl = document.getElementById('result');
+            const startedAt = Date.now();
+            const totalRecipients = user_ids.length;
+            resultEl.innerText = '';
+            if (sendMeta) {
+                sendMeta.textContent = `Sending to ${totalRecipients} user(s)...`;
+            }
+            unifiedSendBtn.disabled = true;
+            unifiedSendBtn.textContent = 'Sending...';
+            try {
+                const res = await fetch('/send/all/bulk', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                const result = await res.json();
+                const failedCount = Array.isArray(result.failed) ? result.failed.length : 0;
+                if (res.ok && result.success) {
+                    const sentCount = Array.isArray(result.sent) ? result.sent.length : 0;
+                    if (failedCount > 0) {
+                        resultEl.innerText = `Sent to ${sentCount}/${totalRecipients} user(s). Failed: ${failedCount}.`;
+                    } else {
+                        resultEl.innerText = `Sent to ${sentCount} user(s).`;
+                    }
+                    if (sendMeta) {
+                        sendMeta.textContent = `Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+                    }
+                } else {
+                    resultEl.innerText = result.detail || result.error || 'Broadcast failed.';
+                    if (sendMeta) {
+                        sendMeta.textContent = '';
+                    }
+                }
+            } catch (err) {
+                resultEl.innerText = `Broadcast failed: ${err.message}`;
+                if (sendMeta) {
+                    sendMeta.textContent = '';
+                }
+            } finally {
+                unifiedSendBtn.disabled = false;
+                unifiedSendBtn.textContent = 'Send Broadcast';
             }
         };
 
         // ================= USER LIMITS MANAGER =================
-        let allUsersCache = [];
         function getUsernameById(tid) {
             const u = allUsersCache.find(u => String(u.telegram_id) === String(tid));
             return u ? (u.username || '') : '';
