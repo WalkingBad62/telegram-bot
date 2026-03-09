@@ -1999,6 +1999,31 @@
                             loadScheduledJobs();
                         };
                         tdAction.appendChild(cancelBtn);
+                    } else if (item.can_delete) {
+                        const removeBtn = document.createElement('button');
+                        removeBtn.type = 'button';
+                        removeBtn.className = 'btn btn-sm btn-outline-secondary';
+                        removeBtn.textContent = 'Remove';
+                        removeBtn.onclick = async () => {
+                            const proceed = window.confirm(`Remove scheduled broadcast #${item.id} from list?`);
+                            if (!proceed) return;
+                            try {
+                                const removeRes = await fetch(`/send/schedule/${item.id}/remove`, {
+                                    method: 'DELETE',
+                                    headers: { 'X-CSRF-Token': csrfToken }
+                                });
+                                const removeData = await removeRes.json();
+                                if (!removeRes.ok) {
+                                    setScheduleMessage(removeData.detail || removeData.error || 'Failed to remove schedule.', true);
+                                } else {
+                                    setScheduleMessage(`Scheduled broadcast #${item.id} removed.`, false);
+                                }
+                            } catch (err) {
+                                setScheduleMessage(`Failed to remove schedule: ${err.message}`, true);
+                            }
+                            loadScheduledJobs();
+                        };
+                        tdAction.appendChild(removeBtn);
                     } else {
                         tdAction.textContent = '-';
                     }

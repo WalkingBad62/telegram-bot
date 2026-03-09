@@ -1839,6 +1839,7 @@ async def list_scheduled_broadcasts(request: Request, limit: int = 50):
                 "failed_count": row[8] or 0,
                 "last_error": row[9] or "",
                 "can_cancel": row[3] == "pending",
+                "can_delete": row[3] in ("sent", "cancelled", "failed"),
             }
         )
     return {"items": items}
@@ -1880,6 +1881,37 @@ async def cancel_scheduled_broadcast(schedule_id: int, request: Request):
     _cleanup_attachment_files(payload.get("attachments") or [])
 
     return {"ok": True, "id": schedule_id, "status": "cancelled"}
+
+
+@app.delete("/send/schedule/{schedule_id}/remove")
+async def remove_scheduled_broadcast(schedule_id: int, request: Request):
+    require_login(request)
+    require_csrf(request)
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT status, payload_json FROM scheduled_broadcasts WHERE id = ?",
+            (schedule_id,),
+        )
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scheduled job not found.")
+        status = row[0]
+        payload_raw = row[1] or "{}"
+        if status == "processing":
+            raise HTTPException(status_code=400, detail="Job is currently processing. Try again in a moment.")
+        if status == "pending":
+            raise HTTPException(status_code=400, detail="Pending job cannot be removed. Cancel it first.")
+        c.execute("DELETE FROM scheduled_broadcasts WHERE id = ?", (schedule_id,))
+        conn.commit()
+
+    try:
+        payload = json.loads(payload_raw)
+    except json.JSONDecodeError:
+        payload = {}
+    _cleanup_attachment_files(payload.get("attachments") or [])
+
+    return {"ok": True, "id": schedule_id, "removed": True}
 
 # --- Get all replies (public for bot) ---
 @app.get("/replies")
