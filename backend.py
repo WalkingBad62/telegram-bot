@@ -169,6 +169,7 @@ MAX_SCHEDULE_STICKER_BYTES = 10 * 1024 * 1024
 MAX_SCHEDULE_ITEMS_PER_TYPE = 10
 MAX_SCHEDULE_TEXT_LENGTH = 4000
 ALLOWED_SCHEDULE_STICKER_EXTENSIONS = {".webp", ".tgs", ".webm"}
+TELEGRAM_MEDIA_CAPTION_LIMIT = 1024
 if SCHEDULE_MEDIA_POLL_SECONDS < 1:
     SCHEDULE_MEDIA_POLL_SECONDS = 5.0
 os.makedirs(SCHEDULE_MEDIA_UPLOAD_DIR, exist_ok=True)
@@ -1163,21 +1164,26 @@ def _send_bulk_to_single_user(
     failed = []
     has_success = False
     text = (message or "").strip()
+    has_caption_media = bool(prepared_images or prepared_videos)
+    caption_text = ""
+    trailing_text = ""
+    if text and has_caption_media:
+        caption_text = text[:TELEGRAM_MEDIA_CAPTION_LIMIT]
+        trailing_text = text[TELEGRAM_MEDIA_CAPTION_LIMIT:].strip()
+    elif text:
+        trailing_text = text
 
-    if text:
-        try:
-            resp = _telegram_post("sendMessage", {"chat_id": user_id, "text": text})
-            if resp.status_code == 200:
-                has_success = True
-            else:
-                failed.append({"user_id": user_id, "error": resp.text, "type": "message"})
-        except Exception as e:
-            failed.append({"user_id": user_id, "error": str(e), "type": "message"})
+    image_caption_used = False
+    video_caption_used = False
 
     for image in prepared_images:
         try:
+            data = {"chat_id": user_id}
+            if caption_text and not image_caption_used:
+                data["caption"] = caption_text
+                image_caption_used = True
             files = {"photo": (image["filename"], image["content"], image["content_type"])}
-            resp = _telegram_post("sendPhoto", {"chat_id": user_id}, files=files)
+            resp = _telegram_post("sendPhoto", data, files=files)
             if resp.status_code == 200:
                 has_success = True
             else:
@@ -1201,8 +1207,12 @@ def _send_bulk_to_single_user(
 
     for video in prepared_videos:
         try:
+            data = {"chat_id": user_id}
+            if caption_text and not video_caption_used:
+                data["caption"] = caption_text
+                video_caption_used = True
             files = {"video": (video["filename"], video["content"], video["content_type"])}
-            resp = _telegram_post("sendVideo", {"chat_id": user_id}, files=files)
+            resp = _telegram_post("sendVideo", data, files=files)
             if resp.status_code == 200:
                 has_success = True
             else:
@@ -1248,6 +1258,16 @@ def _send_bulk_to_single_user(
                     "filename": sticker["filename"],
                 }
             )
+
+    if trailing_text:
+        try:
+            resp = _telegram_post("sendMessage", {"chat_id": user_id, "text": trailing_text})
+            if resp.status_code == 200:
+                has_success = True
+            else:
+                failed.append({"user_id": user_id, "error": resp.text, "type": "message"})
+        except Exception as e:
+            failed.append({"user_id": user_id, "error": str(e), "type": "message"})
 
     return {"user_id": user_id, "success": has_success, "failed": failed}
 
