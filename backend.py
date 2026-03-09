@@ -170,6 +170,7 @@ MAX_SCHEDULE_ITEMS_PER_TYPE = 10
 MAX_SCHEDULE_TEXT_LENGTH = 4000
 ALLOWED_SCHEDULE_STICKER_EXTENSIONS = {".webp", ".tgs", ".webm"}
 TELEGRAM_MEDIA_CAPTION_LIMIT = 1024
+TELEGRAM_MEDIA_GROUP_MAX = 10
 if SCHEDULE_MEDIA_POLL_SECONDS < 1:
     SCHEDULE_MEDIA_POLL_SECONDS = 5.0
 os.makedirs(SCHEDULE_MEDIA_UPLOAD_DIR, exist_ok=True)
@@ -1154,6 +1155,52 @@ def _parse_user_ids(raw_user_ids: str) -> List[int]:
     return user_id_list
 
 
+def _send_single_media_item(
+    user_id: int,
+    media_type: str,
+    item: dict,
+    caption: str = "",
+) -> Tuple[bool, str]:
+    endpoint = "sendPhoto" if media_type == "photo" else "sendVideo"
+    key = "photo" if media_type == "photo" else "video"
+    data = {"chat_id": user_id}
+    if caption:
+        data["caption"] = caption
+    files = {key: (item["filename"], item["content"], item["content_type"])}
+    resp = _telegram_post(endpoint, data, files=files)
+    if resp.status_code == 200:
+        return True, ""
+    return False, resp.text
+
+
+def _send_media_group(
+    user_id: int,
+    media_items: List[dict],
+    caption: str = "",
+) -> Tuple[bool, str]:
+    media_payload = []
+    files = {}
+    for idx, media_item in enumerate(media_items):
+        attach_name = f"file{idx}"
+        entry = {
+            "type": media_item["type"],
+            "media": f"attach://{attach_name}",
+        }
+        if idx == 0 and caption:
+            entry["caption"] = caption
+        media_payload.append(entry)
+        item = media_item["item"]
+        files[attach_name] = (item["filename"], item["content"], item["content_type"])
+    data = {
+        "chat_id": user_id,
+        "media": json.dumps(media_payload, ensure_ascii=False),
+    }
+    resp = _telegram_post("sendMediaGroup", data, files=files)
+    if resp.status_code == 200:
+        return True, ""
+    return False, resp.text
+
+
 def _send_bulk_to_single_user(
     user_id: int,
     message: str,
@@ -1164,7 +1211,13 @@ def _send_bulk_to_single_user(
     failed = []
     has_success = False
     text = (message or "").strip()
-    has_caption_media = bool(prepared_images or prepared_videos)
+    media_items = []
+    for image in prepared_images:
+        media_items.append({"type": "photo", "item": image})
+    for video in prepared_videos:
+        media_items.append({"type": "video", "item": video})
+
+    has_caption_media = bool(media_items)
     caption_text = ""
     trailing_text = ""
     if text and has_caption_media:
@@ -1173,66 +1226,59 @@ def _send_bulk_to_single_user(
     elif text:
         trailing_text = text
 
-    image_caption_used = False
-    video_caption_used = False
-
-    for image in prepared_images:
+    caption_pending = caption_text
+    for start in range(0, len(media_items), TELEGRAM_MEDIA_GROUP_MAX):
+        chunk = media_items[start : start + TELEGRAM_MEDIA_GROUP_MAX]
         try:
-            data = {"chat_id": user_id}
-            if caption_text and not image_caption_used:
-                data["caption"] = caption_text
-                image_caption_used = True
-            files = {"photo": (image["filename"], image["content"], image["content_type"])}
-            resp = _telegram_post("sendPhoto", data, files=files)
-            if resp.status_code == 200:
-                has_success = True
-            else:
-                failed.append(
-                    {
-                        "user_id": user_id,
-                        "error": resp.text,
-                        "type": "image",
-                        "filename": image["filename"],
-                    }
+            if len(chunk) >= 2:
+                ok, err = _send_media_group(user_id, chunk, caption_pending)
+                if ok:
+                    has_success = True
+                else:
+                    failed.append({"user_id": user_id, "error": err, "type": "media_group"})
+                    # Fallback to individual sends if album send fails.
+                    for idx, media_item in enumerate(chunk):
+                        fallback_caption = caption_pending if idx == 0 else ""
+                        ok_single, err_single = _send_single_media_item(
+                            user_id,
+                            media_item["type"],
+                            media_item["item"],
+                            fallback_caption,
+                        )
+                        if ok_single:
+                            has_success = True
+                        else:
+                            failed.append(
+                                {
+                                    "user_id": user_id,
+                                    "error": err_single,
+                                    "type": "image" if media_item["type"] == "photo" else "video",
+                                    "filename": media_item["item"]["filename"],
+                                }
+                            )
+            elif len(chunk) == 1:
+                media_item = chunk[0]
+                ok_single, err_single = _send_single_media_item(
+                    user_id,
+                    media_item["type"],
+                    media_item["item"],
+                    caption_pending,
                 )
+                if ok_single:
+                    has_success = True
+                else:
+                    failed.append(
+                        {
+                            "user_id": user_id,
+                            "error": err_single,
+                            "type": "image" if media_item["type"] == "photo" else "video",
+                            "filename": media_item["item"]["filename"],
+                        }
+                    )
         except Exception as e:
-            failed.append(
-                {
-                    "user_id": user_id,
-                    "error": str(e),
-                    "type": "image",
-                    "filename": image["filename"],
-                }
-            )
-
-    for video in prepared_videos:
-        try:
-            data = {"chat_id": user_id}
-            if caption_text and not video_caption_used:
-                data["caption"] = caption_text
-                video_caption_used = True
-            files = {"video": (video["filename"], video["content"], video["content_type"])}
-            resp = _telegram_post("sendVideo", data, files=files)
-            if resp.status_code == 200:
-                has_success = True
-            else:
-                failed.append(
-                    {
-                        "user_id": user_id,
-                        "error": resp.text,
-                        "type": "video",
-                        "filename": video["filename"],
-                    }
-                )
-        except Exception as e:
-            failed.append(
-                {
-                    "user_id": user_id,
-                    "error": str(e),
-                    "type": "video",
-                    "filename": video["filename"],
-                }
-            )
+            media_kind = "media_group" if len(chunk) >= 2 else (chunk[0]["type"] if chunk else "media")
+            failed.append({"user_id": user_id, "error": str(e), "type": media_kind})
+        caption_pending = ""
 
     for sticker in prepared_stickers:
         try:
