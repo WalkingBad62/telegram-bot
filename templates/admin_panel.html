@@ -588,23 +588,6 @@
                         <div class="file-hint">Pick multiple videos in one field or use "Add more".</div>
                     </div>
                     <div class="mb-3">
-                        <div class="file-actions">
-                            <label class="form-label mb-0">Stickers:</label>
-                            <button type="button" id="addStickerBtn" class="add-file-btn">Add more</button>
-                            <button type="button" id="clearStickerBtn" class="clear-file-btn">Clear all</button>
-                        </div>
-                        <div id="stickerInputs" class="file-group">
-                            <div class="file-row">
-                                <div class="file-input-wrap">
-                                    <input type="file" name="stickers" accept=".webp,.tgs,.webm" class="form-control" multiple>
-                                    <div class="file-name">No file selected</div>
-                                </div>
-                                <button type="button" class="remove-file-btn" disabled>Remove</button>
-                            </div>
-                        </div>
-                        <div class="file-hint">Supported sticker types: .webp, .tgs, .webm.</div>
-                    </div>
-                    <div class="mb-3">
                         <label class="form-label">Schedule Time (optional)</label>
                         <input type="datetime-local" id="scheduleAtInput" class="form-control">
                         <div class="file-hint">If empty, message will be sent immediately.</div>
@@ -932,13 +915,10 @@
         const PREVIEW_LIMIT = 140;
         const imageInputs = document.getElementById('imageInputs');
         const videoInputs = document.getElementById('videoInputs');
-        const stickerInputs = document.getElementById('stickerInputs');
         const addImageBtn = document.getElementById('addImageBtn');
         const addVideoBtn = document.getElementById('addVideoBtn');
-        const addStickerBtn = document.getElementById('addStickerBtn');
         const clearImageBtn = document.getElementById('clearImageBtn');
         const clearVideoBtn = document.getElementById('clearVideoBtn');
-        const clearStickerBtn = document.getElementById('clearStickerBtn');
         const unifiedUserSelect = document.getElementById('unifiedUserSelect');
         const unifiedAllUsers = document.getElementById('unifiedAllUsers');
         const unifiedMessage = document.getElementById('unifiedMessage');
@@ -1014,10 +994,7 @@
             if (kind === 'image') {
                 return { name: 'images', accept: 'image/*' };
             }
-            if (kind === 'video') {
-                return { name: 'videos', accept: 'video/*' };
-            }
-            return { name: 'stickers', accept: '.webp,.tgs,.webm' };
+            return { name: 'videos', accept: 'video/*' };
         }
 
         function addFileRow(container, kind) {
@@ -1076,16 +1053,12 @@
 
         addImageBtn.onclick = () => addFileRow(imageInputs, 'image');
         addVideoBtn.onclick = () => addFileRow(videoInputs, 'video');
-        addStickerBtn.onclick = () => addFileRow(stickerInputs, 'sticker');
         clearImageBtn.onclick = () => resetFileRows(imageInputs, 'image');
         clearVideoBtn.onclick = () => resetFileRows(videoInputs, 'video');
-        clearStickerBtn.onclick = () => resetFileRows(stickerInputs, 'sticker');
         initFileRows(imageInputs);
         initFileRows(videoInputs);
-        initFileRows(stickerInputs);
         updateRemoveButtons(imageInputs);
         updateRemoveButtons(videoInputs);
-        updateRemoveButtons(stickerInputs);
         document.getElementById('confirmDeleteBtn').onclick = async function() {
             if (!pendingDeleteId) {
                 return;
@@ -2053,9 +2026,8 @@
             const message = unifiedMessage.value;
             const imageFiles = collectFiles(imageInputs);
             const videoFiles = collectFiles(videoInputs);
-            const stickerFiles = collectFiles(stickerInputs);
-            if (!message && imageFiles.length === 0 && videoFiles.length === 0 && stickerFiles.length === 0) {
-                resultEl.innerText = 'Please provide at least a message, image, video, or sticker.';
+            if (!message && imageFiles.length === 0 && videoFiles.length === 0) {
+                resultEl.innerText = 'Please provide at least a message, image, or video.';
                 return;
             }
             const formData = new FormData();
@@ -2063,7 +2035,6 @@
             formData.append('user_ids', recipients.user_ids.join(','));
             imageFiles.forEach(file => formData.append('images', file));
             videoFiles.forEach(file => formData.append('videos', file));
-            stickerFiles.forEach(file => formData.append('stickers', file));
 
             const startedAt = Date.now();
             const totalRecipients = recipients.user_ids.length;
@@ -2128,9 +2099,8 @@
             const message = unifiedMessage.value;
             const imageFiles = collectFiles(imageInputs);
             const videoFiles = collectFiles(videoInputs);
-            const stickerFiles = collectFiles(stickerInputs);
-            if (!message && imageFiles.length === 0 && videoFiles.length === 0 && stickerFiles.length === 0) {
-                setScheduleMessage('Please provide at least a message, image, video, or sticker.', true);
+            if (!message && imageFiles.length === 0 && videoFiles.length === 0) {
+                setScheduleMessage('Please provide at least a message, image, or video.', true);
                 return;
             }
 
@@ -2140,7 +2110,6 @@
             formData.append('run_at', runAtIso);
             imageFiles.forEach(file => formData.append('images', file));
             videoFiles.forEach(file => formData.append('videos', file));
-            stickerFiles.forEach(file => formData.append('stickers', file));
 
             if (scheduleSendBtn) {
                 scheduleSendBtn.disabled = true;
