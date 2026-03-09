@@ -79,13 +79,13 @@ except ValueError:
 if TELEGRAM_API_TIMEOUT <= 0:
     TELEGRAM_API_TIMEOUT = 15.0
 try:
-    BULK_SEND_CONCURRENCY = int(os.getenv("BULK_SEND_CONCURRENCY", "8"))
+    BULK_SEND_CONCURRENCY = int(os.getenv("BULK_SEND_CONCURRENCY", "15"))
 except ValueError:
-    BULK_SEND_CONCURRENCY = 8
+    BULK_SEND_CONCURRENCY = 15
 if BULK_SEND_CONCURRENCY < 1:
     BULK_SEND_CONCURRENCY = 1
-if BULK_SEND_CONCURRENCY > 25:
-    BULK_SEND_CONCURRENCY = 25
+if BULK_SEND_CONCURRENCY > 30:
+    BULK_SEND_CONCURRENCY = 30
 
 def build_default_start_message(mode: str) -> str:
     if mode == "trading":
@@ -1159,46 +1159,90 @@ def _send_single_media_item(
     user_id: int,
     media_type: str,
     item: dict,
+    file_id: str = "",
     caption: str = "",
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, str]:
     endpoint = "sendPhoto" if media_type == "photo" else "sendVideo"
     key = "photo" if media_type == "photo" else "video"
     data = {"chat_id": user_id}
     if caption:
         data["caption"] = caption
-    files = {key: (item["filename"], item["content"], item["content_type"])}
-    resp = _telegram_post(endpoint, data, files=files)
-    if resp.status_code == 200:
-        return True, ""
-    return False, resp.text
+    if file_id:
+        data[key] = file_id
+        resp = _telegram_post(endpoint, data=data)
+    else:
+        files = {key: (item["filename"], item["content"], item["content_type"])}
+        resp = _telegram_post(endpoint, data, files=files)
+    if resp.status_code != 200:
+        return False, resp.text, ""
+    try:
+        payload = resp.json()
+        result = payload.get("result") if isinstance(payload, dict) else None
+    except Exception:
+        result = None
+    extracted_file_id = ""
+    if isinstance(result, dict):
+        if media_type == "photo":
+            photos = result.get("photo") or []
+            if isinstance(photos, list) and photos:
+                last_photo = photos[-1] if isinstance(photos[-1], dict) else {}
+                extracted_file_id = str(last_photo.get("file_id") or "")
+        else:
+            video = result.get("video") or {}
+            if isinstance(video, dict):
+                extracted_file_id = str(video.get("file_id") or "")
+    return True, "", extracted_file_id
 
 
 def _send_media_group(
     user_id: int,
     media_items: List[dict],
     caption: str = "",
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, List[dict]]:
     media_payload = []
     files = {}
+    output_refs: List[dict] = []
     for idx, media_item in enumerate(media_items):
         attach_name = f"file{idx}"
+        media_ref = media_item.get("file_id") or ""
         entry = {
             "type": media_item["type"],
-            "media": f"attach://{attach_name}",
+            "media": media_ref if media_ref else f"attach://{attach_name}",
         }
         if idx == 0 and caption:
             entry["caption"] = caption
         media_payload.append(entry)
-        item = media_item["item"]
-        files[attach_name] = (item["filename"], item["content"], item["content_type"])
+        if not media_ref:
+            item = media_item["item"]
+            files[attach_name] = (item["filename"], item["content"], item["content_type"])
+        output_refs.append({"type": media_item["type"], "file_id": ""})
     data = {
         "chat_id": user_id,
         "media": json.dumps(media_payload, ensure_ascii=False),
     }
-    resp = _telegram_post("sendMediaGroup", data, files=files)
-    if resp.status_code == 200:
-        return True, ""
-    return False, resp.text
+    resp = _telegram_post("sendMediaGroup", data, files=files or None)
+    if resp.status_code != 200:
+        return False, resp.text, output_refs
+    try:
+        payload = resp.json()
+        result = payload.get("result") if isinstance(payload, dict) else None
+    except Exception:
+        result = None
+    if isinstance(result, list):
+        for idx, msg in enumerate(result):
+            if idx >= len(output_refs) or not isinstance(msg, dict):
+                continue
+            media_type = output_refs[idx]["type"]
+            if media_type == "photo":
+                photos = msg.get("photo") or []
+                if isinstance(photos, list) and photos:
+                    last_photo = photos[-1] if isinstance(photos[-1], dict) else {}
+                    output_refs[idx]["file_id"] = str(last_photo.get("file_id") or "")
+            elif media_type == "video":
+                video = msg.get("video") or {}
+                if isinstance(video, dict):
+                    output_refs[idx]["file_id"] = str(video.get("file_id") or "")
+    return True, "", output_refs
 
 
 def _send_bulk_to_single_user(
@@ -1207,15 +1251,29 @@ def _send_bulk_to_single_user(
     prepared_images: List[dict],
     prepared_videos: List[dict],
     prepared_stickers: List[dict],
+    media_refs: Optional[List[dict]] = None,
+    capture_media_refs: bool = False,
 ) -> dict:
     failed = []
     has_success = False
     text = (message or "").strip()
     media_items = []
     for image in prepared_images:
-        media_items.append({"type": "photo", "item": image})
+        media_items.append({"type": "photo", "item": image, "file_id": ""})
     for video in prepared_videos:
-        media_items.append({"type": "video", "item": video})
+        media_items.append({"type": "video", "item": video, "file_id": ""})
+
+    if media_refs:
+        for idx, ref in enumerate(media_refs):
+            if idx >= len(media_items) or not isinstance(ref, dict):
+                continue
+            incoming_type = str(ref.get("type") or "")
+            incoming_file_id = str(ref.get("file_id") or "")
+            if not incoming_file_id:
+                continue
+            if incoming_type != media_items[idx]["type"]:
+                continue
+            media_items[idx]["file_id"] = incoming_file_id
 
     has_caption_media = bool(media_items)
     caption_text = ""
@@ -1226,27 +1284,35 @@ def _send_bulk_to_single_user(
     elif text:
         trailing_text = text
 
+    captured_refs: List[dict] = []
     caption_pending = caption_text
     for start in range(0, len(media_items), TELEGRAM_MEDIA_GROUP_MAX):
         chunk = media_items[start : start + TELEGRAM_MEDIA_GROUP_MAX]
         try:
             if len(chunk) >= 2:
-                ok, err = _send_media_group(user_id, chunk, caption_pending)
+                ok, err, chunk_refs = _send_media_group(user_id, chunk, caption_pending)
                 if ok:
                     has_success = True
+                    if capture_media_refs:
+                        captured_refs.extend(chunk_refs)
                 else:
                     failed.append({"user_id": user_id, "error": err, "type": "media_group"})
                     # Fallback to individual sends if album send fails.
                     for idx, media_item in enumerate(chunk):
                         fallback_caption = caption_pending if idx == 0 else ""
-                        ok_single, err_single = _send_single_media_item(
+                        ok_single, err_single, single_file_id = _send_single_media_item(
                             user_id,
                             media_item["type"],
                             media_item["item"],
+                            media_item.get("file_id") or "",
                             fallback_caption,
                         )
                         if ok_single:
                             has_success = True
+                            if capture_media_refs:
+                                captured_refs.append(
+                                    {"type": media_item["type"], "file_id": single_file_id}
+                                )
                         else:
                             failed.append(
                                 {
@@ -1258,14 +1324,19 @@ def _send_bulk_to_single_user(
                             )
             elif len(chunk) == 1:
                 media_item = chunk[0]
-                ok_single, err_single = _send_single_media_item(
+                ok_single, err_single, single_file_id = _send_single_media_item(
                     user_id,
                     media_item["type"],
                     media_item["item"],
+                    media_item.get("file_id") or "",
                     caption_pending,
                 )
                 if ok_single:
                     has_success = True
+                    if capture_media_refs:
+                        captured_refs.append(
+                            {"type": media_item["type"], "file_id": single_file_id}
+                        )
                 else:
                     failed.append(
                         {
@@ -1315,7 +1386,12 @@ def _send_bulk_to_single_user(
         except Exception as e:
             failed.append({"user_id": user_id, "error": str(e), "type": "message"})
 
-    return {"user_id": user_id, "success": has_success, "failed": failed}
+    return {
+        "user_id": user_id,
+        "success": has_success,
+        "failed": failed,
+        "media_refs": captured_refs if capture_media_refs else [],
+    }
 
 
 async def _send_bulk_payload_to_users(
@@ -1325,6 +1401,35 @@ async def _send_bulk_payload_to_users(
     prepared_videos: List[dict],
     prepared_stickers: List[dict],
 ) -> Tuple[List[int], List[dict]]:
+    if not user_id_list:
+        return [], []
+
+    results = []
+    shared_media_refs: List[dict] = []
+    has_media = bool(prepared_images or prepared_videos)
+
+    remaining_users = list(user_id_list)
+    if has_media and remaining_users:
+        seed_user = remaining_users.pop(0)
+        seed_result = await asyncio.to_thread(
+            _send_bulk_to_single_user,
+            seed_user,
+            text,
+            prepared_images,
+            prepared_videos,
+            prepared_stickers,
+            None,
+            True,
+        )
+        results.append(seed_result)
+        seed_media_refs = seed_result.get("media_refs") or []
+        expected_media_count = len(prepared_images) + len(prepared_videos)
+        if (
+            len(seed_media_refs) == expected_media_count
+            and all(isinstance(ref, dict) and ref.get("file_id") for ref in seed_media_refs)
+        ):
+            shared_media_refs = seed_media_refs
+
     semaphore = asyncio.Semaphore(BULK_SEND_CONCURRENCY)
 
     async def _send(uid: int):
@@ -1336,9 +1441,13 @@ async def _send_bulk_payload_to_users(
                 prepared_images,
                 prepared_videos,
                 prepared_stickers,
+                shared_media_refs or None,
+                False,
             )
 
-    results = await asyncio.gather(*[_send(uid) for uid in user_id_list])
+    if remaining_users:
+        batch_results = await asyncio.gather(*[_send(uid) for uid in remaining_users])
+        results.extend(batch_results)
     sent = [entry["user_id"] for entry in results if entry.get("success")]
     failed = []
     for entry in results:
