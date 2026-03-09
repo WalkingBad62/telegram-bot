@@ -614,6 +614,10 @@
                         <button type="button" id="scheduleSendBtn" class="btn btn-outline-primary">Schedule Broadcast</button>
                         <button type="button" id="refreshSchedulesBtn" class="btn btn-outline-secondary">Refresh Schedules</button>
                     </div>
+                    <div id="retargetLoadingIndicator" class="d-none align-items-center gap-2 mt-2 text-primary">
+                        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                        <span>Sending retarget message...</span>
+                    </div>
                     <div id="sendMeta" class="send-meta"></div>
                     <div id="scheduleResult" class="mt-2"></div>
                 </form>
@@ -943,6 +947,7 @@
         const scheduleSendBtn = document.getElementById('scheduleSendBtn');
         const refreshSchedulesBtn = document.getElementById('refreshSchedulesBtn');
         const scheduleResult = document.getElementById('scheduleResult');
+        const retargetLoadingIndicator = document.getElementById('retargetLoadingIndicator');
         const userSelectionMeta = document.getElementById('userSelectionMeta');
         const userSearchInput = document.getElementById('userSearchInput');
         const selectVisibleUsersBtn = document.getElementById('selectVisibleUsersBtn');
@@ -1919,6 +1924,28 @@
             return files;
         }
 
+        function setButtonLoading(button, loadingText, defaultText, isLoading) {
+            if (!button) return;
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${loadingText}`;
+                return;
+            }
+            button.disabled = false;
+            button.textContent = defaultText;
+        }
+
+        function toggleRetargetLoading(isLoading) {
+            if (!retargetLoadingIndicator) return;
+            if (isLoading) {
+                retargetLoadingIndicator.classList.remove('d-none');
+                retargetLoadingIndicator.classList.add('d-flex');
+                return;
+            }
+            retargetLoadingIndicator.classList.remove('d-flex');
+            retargetLoadingIndicator.classList.add('d-none');
+        }
+
         function setScheduleMessage(msg, isError) {
             if (!scheduleResult) return;
             scheduleResult.textContent = msg || '';
@@ -2044,8 +2071,8 @@
             if (sendMeta) {
                 sendMeta.textContent = `Sending to ${totalRecipients} user(s)...`;
             }
-            unifiedSendBtn.disabled = true;
-            unifiedSendBtn.textContent = 'Sending...';
+            setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', true);
+            toggleRetargetLoading(true);
             try {
                 const res = await fetch('/send/all/bulk', {
                     method: 'POST',
@@ -2076,8 +2103,8 @@
                     sendMeta.textContent = '';
                 }
             } finally {
-                unifiedSendBtn.disabled = false;
-                unifiedSendBtn.textContent = 'Send Broadcast';
+                setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', false);
+                toggleRetargetLoading(false);
             }
         }
 
