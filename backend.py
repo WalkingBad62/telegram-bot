@@ -1,11 +1,11 @@
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import hashlib
 import sqlite3
@@ -14,6 +14,7 @@ import subprocess
 import sys
 import re
 import time
+import json
 import requests
 from dotenv import load_dotenv
 import secrets
@@ -157,6 +158,20 @@ START_IMAGE_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "start-images")
 ALLOWED_START_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_START_IMAGE_BYTES = 8 * 1024 * 1024
 os.makedirs(START_IMAGE_UPLOAD_DIR, exist_ok=True)
+SCHEDULE_MEDIA_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "scheduled-media")
+try:
+    SCHEDULE_MEDIA_POLL_SECONDS = float(os.getenv("SCHEDULE_MEDIA_POLL_SECONDS", "5") or "5")
+except ValueError:
+    SCHEDULE_MEDIA_POLL_SECONDS = 5.0
+MAX_SCHEDULE_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_SCHEDULE_VIDEO_BYTES = 50 * 1024 * 1024
+MAX_SCHEDULE_STICKER_BYTES = 10 * 1024 * 1024
+MAX_SCHEDULE_ITEMS_PER_TYPE = 10
+MAX_SCHEDULE_TEXT_LENGTH = 4000
+ALLOWED_SCHEDULE_STICKER_EXTENSIONS = {".webp", ".tgs", ".webm"}
+if SCHEDULE_MEDIA_POLL_SECONDS < 1:
+    SCHEDULE_MEDIA_POLL_SECONDS = 5.0
+os.makedirs(SCHEDULE_MEDIA_UPLOAD_DIR, exist_ok=True)
 
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
@@ -312,6 +327,31 @@ def init_db():
                 created_at TEXT
             )
         ''')
+        c.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS scheduled_broadcasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message TEXT NOT NULL DEFAULT '',
+                user_ids TEXT NOT NULL,
+                run_at_utc TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                sent_at TEXT,
+                total_users INTEGER NOT NULL DEFAULT 0,
+                sent_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+            '''
+        )
+        c.execute(
+            '''
+            CREATE INDEX IF NOT EXISTS idx_scheduled_broadcasts_status_run_at
+            ON scheduled_broadcasts (status, run_at_utc)
+            '''
+        )
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("start_message", DEFAULT_START_MESSAGE)
@@ -596,6 +636,29 @@ app.add_middleware(
     same_site=SESSION_SAMESITE,
     max_age=SESSION_MAX_AGE,
 )
+
+scheduled_worker_task: Optional[asyncio.Task] = None
+
+
+@app.on_event("startup")
+async def start_scheduled_worker():
+    global scheduled_worker_task
+    if scheduled_worker_task is None or scheduled_worker_task.done():
+        scheduled_worker_task = asyncio.create_task(_scheduled_broadcast_worker())
+
+
+@app.on_event("shutdown")
+async def stop_scheduled_worker():
+    global scheduled_worker_task
+    if not scheduled_worker_task:
+        return
+    scheduled_worker_task.cancel()
+    try:
+        await scheduled_worker_task
+    except asyncio.CancelledError:
+        pass
+    finally:
+        scheduled_worker_task = None
 
 # --- Auth Helpers ---
 def is_logged_in(request: Request):
@@ -919,11 +982,183 @@ def _telegram_post(endpoint: str, data: dict, files: Optional[dict] = None):
     )
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_utc_iso(dt: datetime) -> str:
+    current = dt
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc).replace(microsecond=0)
+    return current.isoformat().replace("+00:00", "Z")
+
+
+def _parse_run_at_utc(raw_value: str) -> datetime:
+    raw = (raw_value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="run_at is required.")
+    candidates = [raw]
+    if " " in raw and "T" not in raw:
+        candidates.append(raw.replace(" ", "T"))
+    for candidate in candidates:
+        normalized = candidate
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    raise HTTPException(status_code=400, detail="Invalid run_at format. Use ISO datetime.")
+
+
+def _safe_filename(name: str, fallback: str) -> str:
+    sanitized = re.sub(r"[^a-zA-Z0-9._-]+", "_", name or "").strip("._")
+    return sanitized or fallback
+
+
+def _resolve_schedule_media_path(path: str) -> Optional[str]:
+    target = os.path.abspath(path or "")
+    root = os.path.abspath(SCHEDULE_MEDIA_UPLOAD_DIR)
+    if not target:
+        return None
+    try:
+        if os.path.commonpath([root, target]) != root:
+            return None
+    except ValueError:
+        return None
+    return target
+
+
+async def _prepare_uploaded_files(
+    files: List[UploadFile],
+    media_type: str,
+    max_bytes: int,
+    content_prefix: Optional[str] = None,
+    allowed_extensions: Optional[set] = None,
+    limit: Optional[int] = None,
+) -> List[dict]:
+    prepared = []
+    for upload in files or []:
+        filename = (upload.filename or "").strip()
+        if not filename:
+            continue
+        if limit is not None and limit > 0 and len(prepared) >= limit:
+            raise HTTPException(status_code=400, detail=f"Too many {media_type} files. Max {limit}.")
+        ext = os.path.splitext(filename)[1].lower()
+        if allowed_extensions and ext not in allowed_extensions:
+            raise HTTPException(status_code=400, detail=f"Unsupported {media_type} file type: {ext or 'unknown'}")
+        await upload.seek(0)
+        file_bytes = await upload.read()
+        if not file_bytes:
+            continue
+        if len(file_bytes) > max_bytes:
+            raise HTTPException(status_code=400, detail=f"{media_type.title()} file too large.")
+        content_type = (upload.content_type or "").lower()
+        if content_prefix and content_type and not content_type.startswith(content_prefix):
+            raise HTTPException(status_code=400, detail=f"Invalid {media_type} content type.")
+        prepared.append(
+            {
+                "filename": filename,
+                "content": file_bytes,
+                "content_type": upload.content_type or "application/octet-stream",
+                "media_type": media_type,
+            }
+        )
+    return prepared
+
+
+def _persist_scheduled_files(prepared_files: List[dict]) -> List[dict]:
+    attachments = []
+    for item in prepared_files:
+        original_name = item.get("filename") or "file"
+        media_type = item.get("media_type") or "file"
+        ext = os.path.splitext(original_name)[1].lower()
+        safe_base = _safe_filename(os.path.splitext(original_name)[0], media_type)
+        stored_name = (
+            f"{media_type}_{_utc_now().strftime('%Y%m%d%H%M%S')}_"
+            f"{secrets.token_hex(6)}_{safe_base[:40]}{ext}"
+        )
+        stored_path = os.path.abspath(os.path.join(SCHEDULE_MEDIA_UPLOAD_DIR, stored_name))
+        with open(stored_path, "wb") as f:
+            f.write(item["content"])
+        attachments.append(
+            {
+                "type": media_type,
+                "path": stored_path,
+                "filename": original_name,
+                "content_type": item.get("content_type") or "application/octet-stream",
+            }
+        )
+    return attachments
+
+
+def _cleanup_attachment_files(attachments: List[dict]) -> None:
+    for item in attachments or []:
+        resolved = _resolve_schedule_media_path(item.get("path") or "")
+        if not resolved:
+            continue
+        try:
+            if os.path.isfile(resolved):
+                os.remove(resolved)
+        except OSError:
+            pass
+
+
+def _load_prepared_files_from_attachments(attachments: List[dict]) -> Tuple[List[dict], List[dict], List[dict]]:
+    prepared_images: List[dict] = []
+    prepared_videos: List[dict] = []
+    prepared_stickers: List[dict] = []
+    for item in attachments or []:
+        media_type = (item.get("type") or "").lower()
+        resolved = _resolve_schedule_media_path(item.get("path") or "")
+        if not resolved or not os.path.isfile(resolved):
+            raise FileNotFoundError(f"Missing scheduled {media_type or 'media'} file.")
+        with open(resolved, "rb") as f:
+            content = f.read()
+        if not content:
+            continue
+        prepared_item = {
+            "filename": item.get("filename") or os.path.basename(resolved),
+            "content": content,
+            "content_type": item.get("content_type") or "application/octet-stream",
+        }
+        if media_type == "image":
+            prepared_images.append(prepared_item)
+        elif media_type == "video":
+            prepared_videos.append(prepared_item)
+        elif media_type == "sticker":
+            prepared_stickers.append(prepared_item)
+    return prepared_images, prepared_videos, prepared_stickers
+
+
+def _parse_user_ids(raw_user_ids: str) -> List[int]:
+    user_id_list = []
+    seen = set()
+    for token in (raw_user_ids or "").split(","):
+        value = (token or "").strip()
+        if not value:
+            continue
+        try:
+            uid = int(value)
+        except ValueError:
+            continue
+        if uid in seen:
+            continue
+        seen.add(uid)
+        user_id_list.append(uid)
+    return user_id_list
+
+
 def _send_bulk_to_single_user(
     user_id: int,
     message: str,
     prepared_images: List[dict],
     prepared_videos: List[dict],
+    prepared_stickers: List[dict],
 ) -> dict:
     failed = []
     has_success = False
@@ -946,19 +1181,23 @@ def _send_bulk_to_single_user(
             if resp.status_code == 200:
                 has_success = True
             else:
-                failed.append({
+                failed.append(
+                    {
+                        "user_id": user_id,
+                        "error": resp.text,
+                        "type": "image",
+                        "filename": image["filename"],
+                    }
+                )
+        except Exception as e:
+            failed.append(
+                {
                     "user_id": user_id,
-                    "error": resp.text,
+                    "error": str(e),
                     "type": "image",
                     "filename": image["filename"],
-                })
-        except Exception as e:
-            failed.append({
-                "user_id": user_id,
-                "error": str(e),
-                "type": "image",
-                "filename": image["filename"],
-            })
+                }
+            )
 
     for video in prepared_videos:
         try:
@@ -967,39 +1206,215 @@ def _send_bulk_to_single_user(
             if resp.status_code == 200:
                 has_success = True
             else:
-                failed.append({
+                failed.append(
+                    {
+                        "user_id": user_id,
+                        "error": resp.text,
+                        "type": "video",
+                        "filename": video["filename"],
+                    }
+                )
+        except Exception as e:
+            failed.append(
+                {
                     "user_id": user_id,
-                    "error": resp.text,
+                    "error": str(e),
                     "type": "video",
                     "filename": video["filename"],
-                })
+                }
+            )
+
+    for sticker in prepared_stickers:
+        try:
+            files = {"sticker": (sticker["filename"], sticker["content"], sticker["content_type"])}
+            resp = _telegram_post("sendSticker", {"chat_id": user_id}, files=files)
+            if resp.status_code == 200:
+                has_success = True
+            else:
+                failed.append(
+                    {
+                        "user_id": user_id,
+                        "error": resp.text,
+                        "type": "sticker",
+                        "filename": sticker["filename"],
+                    }
+                )
         except Exception as e:
-            failed.append({
-                "user_id": user_id,
-                "error": str(e),
-                "type": "video",
-                "filename": video["filename"],
-            })
+            failed.append(
+                {
+                    "user_id": user_id,
+                    "error": str(e),
+                    "type": "sticker",
+                    "filename": sticker["filename"],
+                }
+            )
 
     return {"user_id": user_id, "success": has_success, "failed": failed}
 
 
-def _parse_user_ids(raw_user_ids: str) -> List[int]:
+async def _send_bulk_payload_to_users(
+    user_id_list: List[int],
+    text: str,
+    prepared_images: List[dict],
+    prepared_videos: List[dict],
+    prepared_stickers: List[dict],
+) -> Tuple[List[int], List[dict]]:
+    semaphore = asyncio.Semaphore(BULK_SEND_CONCURRENCY)
+
+    async def _send(uid: int):
+        async with semaphore:
+            return await asyncio.to_thread(
+                _send_bulk_to_single_user,
+                uid,
+                text,
+                prepared_images,
+                prepared_videos,
+                prepared_stickers,
+            )
+
+    results = await asyncio.gather(*[_send(uid) for uid in user_id_list])
+    sent = [entry["user_id"] for entry in results if entry.get("success")]
+    failed = []
+    for entry in results:
+        failed.extend(entry.get("failed", []))
+    return sent, failed
+
+
+def _claim_due_scheduled_job(now_iso: str) -> Optional[Dict[str, Any]]:
+    with sqlite3.connect(DB_NAME, timeout=20) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, payload_json, run_at_utc
+            FROM scheduled_broadcasts
+            WHERE status = 'pending' AND run_at_utc <= ?
+            ORDER BY run_at_utc ASC, id ASC
+            LIMIT 1
+            """,
+            (now_iso,),
+        )
+        row = c.fetchone()
+        if not row:
+            conn.commit()
+            return None
+        job_id = row[0]
+        c.execute(
+            """
+            UPDATE scheduled_broadcasts
+            SET status = 'processing', started_at = ?
+            WHERE id = ? AND status = 'pending'
+            """,
+            (now_iso, job_id),
+        )
+        if c.rowcount != 1:
+            conn.rollback()
+            return None
+        conn.commit()
+    try:
+        payload = json.loads(row[1] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return {"id": job_id, "run_at_utc": row[2], "payload": payload}
+
+
+def _finalize_scheduled_job(
+    job_id: int,
+    status: str,
+    total_users: int,
+    sent_count: int,
+    failed_count: int,
+    last_error: str = "",
+) -> None:
+    sent_at = _to_utc_iso(_utc_now()) if status in ("sent", "failed", "cancelled") else None
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE scheduled_broadcasts
+            SET status = ?, sent_at = ?, total_users = ?, sent_count = ?, failed_count = ?, last_error = ?
+            WHERE id = ?
+            """,
+            (status, sent_at, total_users, sent_count, failed_count, (last_error or "")[:1000], job_id),
+        )
+        conn.commit()
+
+
+async def _process_scheduled_job(job: Dict[str, Any]) -> None:
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    message = (payload.get("message") or "").strip()
+    if len(message) > MAX_SCHEDULE_TEXT_LENGTH:
+        message = message[:MAX_SCHEDULE_TEXT_LENGTH]
     user_id_list = []
-    seen = set()
-    for token in (raw_user_ids or "").split(","):
-        value = (token or "").strip()
-        if not value:
-            continue
+    for uid in payload.get("user_ids") or []:
         try:
-            uid = int(value)
-        except ValueError:
+            parsed = int(uid)
+        except (TypeError, ValueError):
             continue
-        if uid in seen:
-            continue
-        seen.add(uid)
-        user_id_list.append(uid)
-    return user_id_list
+        if parsed not in user_id_list:
+            user_id_list.append(parsed)
+    attachments = payload.get("attachments") or []
+    if not message and not attachments:
+        _finalize_scheduled_job(job["id"], "failed", len(user_id_list), 0, 0, "Scheduled payload is empty.")
+        return
+    if not user_id_list:
+        _finalize_scheduled_job(job["id"], "failed", 0, 0, 0, "No valid recipients in scheduled payload.")
+        _cleanup_attachment_files(attachments)
+        return
+
+    try:
+        prepared_images, prepared_videos, prepared_stickers = await asyncio.to_thread(
+            _load_prepared_files_from_attachments,
+            attachments,
+        )
+    except Exception as exc:
+        _finalize_scheduled_job(job["id"], "failed", len(user_id_list), 0, 0, str(exc))
+        _cleanup_attachment_files(attachments)
+        return
+
+    if not message and not prepared_images and not prepared_videos and not prepared_stickers:
+        _finalize_scheduled_job(job["id"], "failed", len(user_id_list), 0, 0, "No message or media to send.")
+        _cleanup_attachment_files(attachments)
+        return
+
+    sent, failed = await _send_bulk_payload_to_users(
+        user_id_list,
+        message,
+        prepared_images,
+        prepared_videos,
+        prepared_stickers,
+    )
+    status = "sent" if sent else "failed"
+    error_note = ""
+    if failed:
+        sample = failed[0].get("error", "")
+        error_note = f"{len(failed)} deliveries failed."
+        if sample:
+            error_note += f" Sample: {sample[:300]}"
+
+    _finalize_scheduled_job(
+        job["id"],
+        status,
+        len(user_id_list),
+        len(sent),
+        len(failed),
+        error_note,
+    )
+    _cleanup_attachment_files(attachments)
+
+
+async def _scheduled_broadcast_worker() -> None:
+    while True:
+        try:
+            due_job = await asyncio.to_thread(_claim_due_scheduled_job, _to_utc_iso(_utc_now()))
+            if not due_job:
+                await asyncio.sleep(SCHEDULE_MEDIA_POLL_SECONDS)
+                continue
+            await _process_scheduled_job(due_job)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await asyncio.sleep(SCHEDULE_MEDIA_POLL_SECONDS)
 
 
 # --- Send message, images, and videos to multiple users ---
@@ -1010,6 +1425,7 @@ async def send_all_bulk(
     message: str = Form(""),
     images: List[UploadFile] = File([]),
     videos: List[UploadFile] = File([]),
+    stickers: List[UploadFile] = File([]),
 ):
     require_login(request)
     require_csrf(request)
@@ -1026,64 +1442,44 @@ async def send_all_bulk(
             status_code=400,
         )
 
-    prepared_images = []
-    for image in images or []:
-        filename = (image.filename or "").strip()
-        if not filename:
-            continue
-        await image.seek(0)
-        file_bytes = await image.read()
-        if not file_bytes:
-            continue
-        prepared_images.append(
-            {
-                "filename": filename,
-                "content": file_bytes,
-                "content_type": image.content_type or "application/octet-stream",
-            }
-        )
-
-    prepared_videos = []
-    for video in videos or []:
-        filename = (video.filename or "").strip()
-        if not filename:
-            continue
-        await video.seek(0)
-        file_bytes = await video.read()
-        if not file_bytes:
-            continue
-        prepared_videos.append(
-            {
-                "filename": filename,
-                "content": file_bytes,
-                "content_type": video.content_type or "application/octet-stream",
-            }
-        )
+    prepared_images = await _prepare_uploaded_files(
+        images,
+        "image",
+        MAX_SCHEDULE_IMAGE_BYTES,
+        content_prefix="image/",
+    )
+    prepared_videos = await _prepare_uploaded_files(
+        videos,
+        "video",
+        MAX_SCHEDULE_VIDEO_BYTES,
+        content_prefix="video/",
+    )
+    prepared_stickers = await _prepare_uploaded_files(
+        stickers,
+        "sticker",
+        MAX_SCHEDULE_STICKER_BYTES,
+        allowed_extensions=ALLOWED_SCHEDULE_STICKER_EXTENSIONS,
+    )
 
     text = (message or "").strip()
-    if not text and not prepared_images and not prepared_videos:
+    if len(text) > MAX_SCHEDULE_TEXT_LENGTH:
         return JSONResponse(
-            {"success": False, "error": "Please provide a message, image, or video."},
+            {"success": False, "error": f"Message too long. Max {MAX_SCHEDULE_TEXT_LENGTH} characters."},
+            status_code=400,
+        )
+    if not text and not prepared_images and not prepared_videos and not prepared_stickers:
+        return JSONResponse(
+            {"success": False, "error": "Please provide at least a message, image, video, or sticker."},
             status_code=400,
         )
 
-    semaphore = asyncio.Semaphore(BULK_SEND_CONCURRENCY)
-
-    async def _send(uid: int):
-        async with semaphore:
-            return await asyncio.to_thread(
-                _send_bulk_to_single_user,
-                uid,
-                text,
-                prepared_images,
-                prepared_videos,
-            )
-
-    results = await asyncio.gather(*[_send(uid) for uid in user_id_list])
-    sent = [entry["user_id"] for entry in results if entry.get("success")]
-    failed = []
-    for entry in results:
-        failed.extend(entry.get("failed", []))
+    sent, failed = await _send_bulk_payload_to_users(
+        user_id_list,
+        text,
+        prepared_images,
+        prepared_videos,
+        prepared_stickers,
+    )
 
     return JSONResponse(
         {
@@ -1095,9 +1491,220 @@ async def send_all_bulk(
                 "text": bool(text),
                 "images": len(prepared_images),
                 "videos": len(prepared_videos),
+                "stickers": len(prepared_stickers),
             },
         }
     )
+
+
+@app.post("/send/schedule/bulk")
+async def schedule_bulk_send(
+    request: Request,
+    user_ids: str = Form(...),
+    run_at: str = Form(...),
+    message: str = Form(""),
+    images: List[UploadFile] = File([]),
+    videos: List[UploadFile] = File([]),
+    stickers: List[UploadFile] = File([]),
+):
+    require_login(request)
+    require_csrf(request)
+    if not TELEGRAM_BOT_TOKEN:
+        return JSONResponse(
+            {"success": False, "error": "TELEGRAM_BOT_TOKEN not set in environment"},
+            status_code=500,
+        )
+
+    user_id_list = _parse_user_ids(user_ids)
+    if not user_id_list:
+        return JSONResponse(
+            {"success": False, "error": "No valid user IDs provided."},
+            status_code=400,
+        )
+
+    run_at_utc = _parse_run_at_utc(run_at)
+    if run_at_utc <= (_utc_now() + timedelta(seconds=3)):
+        return JSONResponse(
+            {"success": False, "error": "Schedule time must be in the future."},
+            status_code=400,
+        )
+
+    text = (message or "").strip()
+    if len(text) > MAX_SCHEDULE_TEXT_LENGTH:
+        return JSONResponse(
+            {"success": False, "error": f"Message too long. Max {MAX_SCHEDULE_TEXT_LENGTH} characters."},
+            status_code=400,
+        )
+
+    prepared_images = await _prepare_uploaded_files(
+        images,
+        "image",
+        MAX_SCHEDULE_IMAGE_BYTES,
+        content_prefix="image/",
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+    prepared_videos = await _prepare_uploaded_files(
+        videos,
+        "video",
+        MAX_SCHEDULE_VIDEO_BYTES,
+        content_prefix="video/",
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+    prepared_stickers = await _prepare_uploaded_files(
+        stickers,
+        "sticker",
+        MAX_SCHEDULE_STICKER_BYTES,
+        allowed_extensions=ALLOWED_SCHEDULE_STICKER_EXTENSIONS,
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+
+    if not text and not prepared_images and not prepared_videos and not prepared_stickers:
+        return JSONResponse(
+            {"success": False, "error": "Please provide at least a message, image, video, or sticker."},
+            status_code=400,
+        )
+
+    all_media = prepared_images + prepared_videos + prepared_stickers
+    stored_attachments: List[dict] = []
+    try:
+        stored_attachments = _persist_scheduled_files(all_media)
+    except Exception as exc:
+        _cleanup_attachment_files(stored_attachments)
+        return JSONResponse(
+            {"success": False, "error": f"Failed to save scheduled media: {str(exc)[:300]}"},
+            status_code=500,
+        )
+
+    payload = {
+        "message": text,
+        "user_ids": user_id_list,
+        "attachments": stored_attachments,
+    }
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    now_iso = _to_utc_iso(_utc_now())
+    run_at_iso = _to_utc_iso(run_at_utc)
+    message_preview = text if len(text) <= 180 else text[:180].rstrip() + "..."
+
+    schedule_id = None
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                INSERT INTO scheduled_broadcasts (
+                    message,
+                    user_ids,
+                    run_at_utc,
+                    status,
+                    payload_json,
+                    created_at,
+                    total_users
+                ) VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    message_preview,
+                    ",".join([str(uid) for uid in user_id_list]),
+                    run_at_iso,
+                    payload_json,
+                    now_iso,
+                    len(user_id_list),
+                ),
+            )
+            conn.commit()
+            schedule_id = c.lastrowid
+    except Exception:
+        _cleanup_attachment_files(stored_attachments)
+        raise
+
+    return JSONResponse(
+        {
+            "success": True,
+            "schedule_id": schedule_id,
+            "run_at_utc": run_at_iso,
+            "total_users": len(user_id_list),
+            "requested": {
+                "text": bool(text),
+                "images": len(prepared_images),
+                "videos": len(prepared_videos),
+                "stickers": len(prepared_stickers),
+            },
+        }
+    )
+
+
+@app.get("/send/schedule/list")
+async def list_scheduled_broadcasts(request: Request, limit: int = 50):
+    require_login(request)
+    safe_limit = max(1, min(int(limit or 50), 200))
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, message, run_at_utc, status, created_at, sent_at, total_users, sent_count, failed_count, last_error
+            FROM scheduled_broadcasts
+            ORDER BY run_at_utc DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        rows = c.fetchall()
+
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": row[0],
+                "message": row[1] or "",
+                "run_at_utc": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "sent_at": row[5],
+                "total_users": row[6] or 0,
+                "sent_count": row[7] or 0,
+                "failed_count": row[8] or 0,
+                "last_error": row[9] or "",
+                "can_cancel": row[3] == "pending",
+            }
+        )
+    return {"items": items}
+
+
+@app.delete("/send/schedule/{schedule_id}")
+async def cancel_scheduled_broadcast(schedule_id: int, request: Request):
+    require_login(request)
+    require_csrf(request)
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT status, payload_json FROM scheduled_broadcasts WHERE id = ?",
+            (schedule_id,),
+        )
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scheduled job not found.")
+        status = row[0]
+        if status != "pending":
+            raise HTTPException(status_code=400, detail=f"Only pending jobs can be cancelled. Current status: {status}")
+        c.execute(
+            """
+            UPDATE scheduled_broadcasts
+            SET status = 'cancelled', sent_at = ?, sent_count = 0, failed_count = 0, last_error = ''
+            WHERE id = ? AND status = 'pending'
+            """,
+            (_to_utc_iso(_utc_now()), schedule_id),
+        )
+        if c.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Unable to cancel. Job may already be processing.")
+        conn.commit()
+        payload_raw = row[1] or "{}"
+
+    try:
+        payload = json.loads(payload_raw)
+    except json.JSONDecodeError:
+        payload = {}
+    _cleanup_attachment_files(payload.get("attachments") or [])
+
+    return {"ok": True, "id": schedule_id, "status": "cancelled"}
 
 # --- Get all replies (public for bot) ---
 @app.get("/replies")

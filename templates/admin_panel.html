@@ -587,10 +587,54 @@
                         </div>
                         <div class="file-hint">Pick multiple videos in one field or use "Add more".</div>
                     </div>
-                    <button type="submit" id="unifiedSendBtn" class="btn btn-primary">Send Broadcast</button>
+                    <div class="mb-3">
+                        <div class="file-actions">
+                            <label class="form-label mb-0">Stickers:</label>
+                            <button type="button" id="addStickerBtn" class="add-file-btn">Add more</button>
+                            <button type="button" id="clearStickerBtn" class="clear-file-btn">Clear all</button>
+                        </div>
+                        <div id="stickerInputs" class="file-group">
+                            <div class="file-row">
+                                <div class="file-input-wrap">
+                                    <input type="file" name="stickers" accept=".webp,.tgs,.webm" class="form-control" multiple>
+                                    <div class="file-name">No file selected</div>
+                                </div>
+                                <button type="button" class="remove-file-btn" disabled>Remove</button>
+                            </div>
+                        </div>
+                        <div class="file-hint">Supported sticker types: .webp, .tgs, .webm.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Schedule Time (optional)</label>
+                        <input type="datetime-local" id="scheduleAtInput" class="form-control">
+                        <div class="file-hint">If empty, message will be sent immediately.</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" id="unifiedSendBtn" class="btn btn-primary">Send Broadcast</button>
+                        <button type="button" id="scheduleSendBtn" class="btn btn-outline-primary">Schedule Broadcast</button>
+                        <button type="button" id="refreshSchedulesBtn" class="btn btn-outline-secondary">Refresh Schedules</button>
+                    </div>
                     <div id="sendMeta" class="send-meta"></div>
+                    <div id="scheduleResult" class="mt-2"></div>
                 </form>
                 <div id="result" class="mt-3"></div>
+                <div class="table-section mt-4">
+                    <h5 class="mb-2" style="font-weight:600;">Scheduled Broadcasts</h5>
+                    <table id="scheduledTable" class="table table-bordered table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Run Time</th>
+                                <th>Status</th>
+                                <th>Targets</th>
+                                <th>Sent/Failed</th>
+                                <th>Message</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduledTableBody"></tbody>
+                    </table>
+                </div>
                 <div id="authError" class="text-danger mt-2"></div>
             </div>
             <div class="panel-card">
@@ -884,14 +928,21 @@
         const PREVIEW_LIMIT = 140;
         const imageInputs = document.getElementById('imageInputs');
         const videoInputs = document.getElementById('videoInputs');
+        const stickerInputs = document.getElementById('stickerInputs');
         const addImageBtn = document.getElementById('addImageBtn');
         const addVideoBtn = document.getElementById('addVideoBtn');
+        const addStickerBtn = document.getElementById('addStickerBtn');
         const clearImageBtn = document.getElementById('clearImageBtn');
         const clearVideoBtn = document.getElementById('clearVideoBtn');
+        const clearStickerBtn = document.getElementById('clearStickerBtn');
         const unifiedUserSelect = document.getElementById('unifiedUserSelect');
         const unifiedAllUsers = document.getElementById('unifiedAllUsers');
         const unifiedMessage = document.getElementById('unifiedMessage');
         const unifiedSendBtn = document.getElementById('unifiedSendBtn');
+        const scheduleAtInput = document.getElementById('scheduleAtInput');
+        const scheduleSendBtn = document.getElementById('scheduleSendBtn');
+        const refreshSchedulesBtn = document.getElementById('refreshSchedulesBtn');
+        const scheduleResult = document.getElementById('scheduleResult');
         const userSelectionMeta = document.getElementById('userSelectionMeta');
         const userSearchInput = document.getElementById('userSearchInput');
         const selectVisibleUsersBtn = document.getElementById('selectVisibleUsersBtn');
@@ -902,6 +953,7 @@
         const startMessageInput = document.getElementById('startMessageInput');
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
+        const scheduledTableBody = document.getElementById('scheduledTableBody');
         let allUsersCache = [];
         let broadcastUsersCache = [];
 
@@ -953,12 +1005,23 @@
             });
         }
 
-        function addFileRow(container, accept) {
+        function fileInputMeta(kind) {
+            if (kind === 'image') {
+                return { name: 'images', accept: 'image/*' };
+            }
+            if (kind === 'video') {
+                return { name: 'videos', accept: 'video/*' };
+            }
+            return { name: 'stickers', accept: '.webp,.tgs,.webm' };
+        }
+
+        function addFileRow(container, kind) {
+            const meta = fileInputMeta(kind);
             const row = document.createElement('div');
             row.className = 'file-row';
             row.innerHTML = `
                 <div class="file-input-wrap">
-                    <input type="file" name="${accept === 'image' ? 'images' : 'videos'}" accept="${accept === 'image' ? 'image/*' : 'video/*'}" class="form-control" multiple>
+                    <input type="file" name="${meta.name}" accept="${meta.accept}" class="form-control" multiple>
                     <div class="file-name">No file selected</div>
                 </div>
                 <button type="button" class="remove-file-btn">Remove</button>
@@ -1001,19 +1064,23 @@
             });
         }
 
-        function resetFileRows(container, accept) {
+        function resetFileRows(container, kind) {
             container.innerHTML = '';
-            addFileRow(container, accept);
+            addFileRow(container, kind);
         }
 
         addImageBtn.onclick = () => addFileRow(imageInputs, 'image');
         addVideoBtn.onclick = () => addFileRow(videoInputs, 'video');
+        addStickerBtn.onclick = () => addFileRow(stickerInputs, 'sticker');
         clearImageBtn.onclick = () => resetFileRows(imageInputs, 'image');
         clearVideoBtn.onclick = () => resetFileRows(videoInputs, 'video');
+        clearStickerBtn.onclick = () => resetFileRows(stickerInputs, 'sticker');
         initFileRows(imageInputs);
         initFileRows(videoInputs);
+        initFileRows(stickerInputs);
         updateRemoveButtons(imageInputs);
         updateRemoveButtons(videoInputs);
+        updateRemoveButtons(stickerInputs);
         document.getElementById('confirmDeleteBtn').onclick = async function() {
             if (!pendingDeleteId) {
                 return;
@@ -1823,52 +1890,156 @@
         };
         loadPairs();
 
-        document.getElementById('unifiedForm').onsubmit = async function(e) {
-            e.preventDefault();
+        async function resolveRecipients() {
             const all = unifiedAllUsers.checked;
-            let user_ids = [];
             if (!all) {
-                user_ids = Array.from(unifiedUserSelect.selectedOptions).map(o => o.value);
-                if (user_ids.length === 0) {
-                    document.getElementById('result').innerText = 'Please select at least one user or choose All Users.';
-                    return;
+                const selectedIds = Array.from(unifiedUserSelect.selectedOptions).map(o => o.value);
+                if (selectedIds.length === 0) {
+                    return { ok: false, error: 'Please select at least one user or choose All Users.' };
                 }
-            } else {
+                return { ok: true, user_ids: selectedIds };
+            }
+            let user_ids = broadcastUsersCache.map(u => String(u.telegram_id));
+            if (user_ids.length === 0) {
+                await loadUsers();
                 user_ids = broadcastUsersCache.map(u => String(u.telegram_id));
-                if (user_ids.length === 0) {
-                    await loadUsers();
-                    user_ids = broadcastUsersCache.map(u => String(u.telegram_id));
-                }
-                if (user_ids.length === 0) {
-                    document.getElementById('result').innerText = 'No users found in list.';
+            }
+            if (user_ids.length === 0) {
+                return { ok: false, error: 'No users found in list.' };
+            }
+            return { ok: true, user_ids };
+        }
+
+        function collectFiles(container) {
+            const files = [];
+            if (!container) return files;
+            container.querySelectorAll('input[type="file"]').forEach(input => {
+                Array.from(input.files || []).forEach(file => files.push(file));
+            });
+            return files;
+        }
+
+        function setScheduleMessage(msg, isError) {
+            if (!scheduleResult) return;
+            scheduleResult.textContent = msg || '';
+            scheduleResult.style.color = isError ? '#b91c1c' : '#166534';
+        }
+
+        function toLocalTimeLabel(value) {
+            if (!value) return '';
+            const dt = new Date(value);
+            if (Number.isNaN(dt.getTime())) return value;
+            return dt.toLocaleString();
+        }
+
+        async function loadScheduledJobs() {
+            if (!scheduledTableBody) return;
+            scheduledTableBody.innerHTML = '';
+            try {
+                const res = await fetch('/send/schedule/list?limit=60');
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
                     return;
                 }
+                const data = await res.json();
+                const items = data.items || [];
+                if (items.length === 0) {
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 7;
+                    td.textContent = 'No scheduled broadcasts.';
+                    td.style.textAlign = 'center';
+                    tr.appendChild(td);
+                    scheduledTableBody.appendChild(tr);
+                    return;
+                }
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    const tdId = document.createElement('td');
+                    tdId.textContent = String(item.id);
+                    const tdRun = document.createElement('td');
+                    tdRun.textContent = toLocalTimeLabel(item.run_at_utc);
+                    const tdStatus = document.createElement('td');
+                    tdStatus.textContent = item.status || '';
+                    const tdTargets = document.createElement('td');
+                    tdTargets.textContent = String(item.total_users || 0);
+                    const tdCounts = document.createElement('td');
+                    tdCounts.textContent = `${item.sent_count || 0}/${item.failed_count || 0}`;
+                    const tdMsg = document.createElement('td');
+                    tdMsg.textContent = item.message || '';
+                    tdMsg.style.maxWidth = '260px';
+                    tdMsg.style.wordBreak = 'break-word';
+                    if (item.last_error) {
+                        tdMsg.title = item.last_error;
+                    }
+                    const tdAction = document.createElement('td');
+                    if (item.can_cancel) {
+                        const cancelBtn = document.createElement('button');
+                        cancelBtn.type = 'button';
+                        cancelBtn.className = 'btn btn-sm btn-outline-danger';
+                        cancelBtn.textContent = 'Cancel';
+                        cancelBtn.onclick = async () => {
+                            const proceed = window.confirm(`Cancel scheduled broadcast #${item.id}?`);
+                            if (!proceed) return;
+                            try {
+                                const cancelRes = await fetch(`/send/schedule/${item.id}`, {
+                                    method: 'DELETE',
+                                    headers: { 'X-CSRF-Token': csrfToken }
+                                });
+                                const cancelData = await cancelRes.json();
+                                if (!cancelRes.ok) {
+                                    setScheduleMessage(cancelData.detail || cancelData.error || 'Failed to cancel schedule.', true);
+                                } else {
+                                    setScheduleMessage(`Scheduled broadcast #${item.id} cancelled.`, false);
+                                }
+                            } catch (err) {
+                                setScheduleMessage(`Failed to cancel schedule: ${err.message}`, true);
+                            }
+                            loadScheduledJobs();
+                        };
+                        tdAction.appendChild(cancelBtn);
+                    } else {
+                        tdAction.textContent = '-';
+                    }
+                    tr.appendChild(tdId);
+                    tr.appendChild(tdRun);
+                    tr.appendChild(tdStatus);
+                    tr.appendChild(tdTargets);
+                    tr.appendChild(tdCounts);
+                    tr.appendChild(tdMsg);
+                    tr.appendChild(tdAction);
+                    scheduledTableBody.appendChild(tr);
+                });
+            } catch (err) {
+                setScheduleMessage(`Failed to load schedules: ${err.message}`, true);
+            }
+        }
+
+        async function submitBroadcastNow() {
+            const resultEl = document.getElementById('result');
+            const recipients = await resolveRecipients();
+            if (!recipients.ok) {
+                resultEl.innerText = recipients.error;
+                return;
             }
             const message = unifiedMessage.value;
-            const imageFiles = [];
-            imageInputs.querySelectorAll('input[type="file"]').forEach(input => {
-                Array.from(input.files).forEach(file => imageFiles.push(file));
-            });
-            const videoFiles = [];
-            videoInputs.querySelectorAll('input[type="file"]').forEach(input => {
-                Array.from(input.files).forEach(file => videoFiles.push(file));
-            });
-            if (!message && imageFiles.length === 0 && videoFiles.length === 0) {
-                document.getElementById('result').innerText = 'Please provide at least a message, image, or video.';
+            const imageFiles = collectFiles(imageInputs);
+            const videoFiles = collectFiles(videoInputs);
+            const stickerFiles = collectFiles(stickerInputs);
+            if (!message && imageFiles.length === 0 && videoFiles.length === 0 && stickerFiles.length === 0) {
+                resultEl.innerText = 'Please provide at least a message, image, video, or sticker.';
                 return;
             }
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('user_ids', user_ids.join(','));
-            for (let i = 0; i < imageFiles.length; i++) {
-                formData.append('images', imageFiles[i]);
-            }
-            for (let i = 0; i < videoFiles.length; i++) {
-                formData.append('videos', videoFiles[i]);
-            }
-            const resultEl = document.getElementById('result');
+            formData.append('user_ids', recipients.user_ids.join(','));
+            imageFiles.forEach(file => formData.append('images', file));
+            videoFiles.forEach(file => formData.append('videos', file));
+            stickerFiles.forEach(file => formData.append('stickers', file));
+
             const startedAt = Date.now();
-            const totalRecipients = user_ids.length;
+            const totalRecipients = recipients.user_ids.length;
             resultEl.innerText = '';
             if (sendMeta) {
                 sendMeta.textContent = `Sending to ${totalRecipients} user(s)...`;
@@ -1908,7 +2079,84 @@
                 unifiedSendBtn.disabled = false;
                 unifiedSendBtn.textContent = 'Send Broadcast';
             }
+        }
+
+        async function createScheduledBroadcast() {
+            const recipients = await resolveRecipients();
+            if (!recipients.ok) {
+                setScheduleMessage(recipients.error, true);
+                return;
+            }
+            const runAtLocal = (scheduleAtInput && scheduleAtInput.value) ? scheduleAtInput.value : '';
+            if (!runAtLocal) {
+                setScheduleMessage('Please select schedule time.', true);
+                return;
+            }
+            const runAtDate = new Date(runAtLocal);
+            if (Number.isNaN(runAtDate.getTime())) {
+                setScheduleMessage('Invalid schedule time.', true);
+                return;
+            }
+            const runAtIso = runAtDate.toISOString();
+            const message = unifiedMessage.value;
+            const imageFiles = collectFiles(imageInputs);
+            const videoFiles = collectFiles(videoInputs);
+            const stickerFiles = collectFiles(stickerInputs);
+            if (!message && imageFiles.length === 0 && videoFiles.length === 0 && stickerFiles.length === 0) {
+                setScheduleMessage('Please provide at least a message, image, video, or sticker.', true);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('user_ids', recipients.user_ids.join(','));
+            formData.append('run_at', runAtIso);
+            imageFiles.forEach(file => formData.append('images', file));
+            videoFiles.forEach(file => formData.append('videos', file));
+            stickerFiles.forEach(file => formData.append('stickers', file));
+
+            if (scheduleSendBtn) {
+                scheduleSendBtn.disabled = true;
+                scheduleSendBtn.textContent = 'Scheduling...';
+            }
+            try {
+                const res = await fetch('/send/schedule/bulk', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    setScheduleMessage(data.detail || data.error || 'Failed to schedule broadcast.', true);
+                    return;
+                }
+                setScheduleMessage(`Scheduled #${data.schedule_id} for ${toLocalTimeLabel(data.run_at_utc)}.`, false);
+                loadScheduledJobs();
+            } catch (err) {
+                setScheduleMessage(`Failed to schedule broadcast: ${err.message}`, true);
+            } finally {
+                if (scheduleSendBtn) {
+                    scheduleSendBtn.disabled = false;
+                    scheduleSendBtn.textContent = 'Schedule Broadcast';
+                }
+            }
+        }
+
+        document.getElementById('unifiedForm').onsubmit = async function(e) {
+            e.preventDefault();
+            await submitBroadcastNow();
         };
+        if (scheduleSendBtn) {
+            scheduleSendBtn.onclick = async function() {
+                await createScheduledBroadcast();
+            };
+        }
+        if (refreshSchedulesBtn) {
+            refreshSchedulesBtn.onclick = function() {
+                loadScheduledJobs();
+            };
+        }
+        loadScheduledJobs();
 
         // ================= USER LIMITS MANAGER =================
         function getUsernameById(tid) {
