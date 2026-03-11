@@ -688,145 +688,150 @@
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
-                    <h2>Promo Image</h2>
-                    <div class="muted">Set the image shown with the first /start message.</div>
+                    <h2>Bot Media &amp; Assets</h2>
+                    <div class="muted">Manage all images and videos for /start, /menu, and promo flows.</div>
                 </div>
                 <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
             </div>
-            <form id="promoImageForm" class="form-section">
-                <div class="mb-3">
-                    <label class="form-label">Image URL</label>
-                    <input type="url" id="promoImageInput" class="form-control" placeholder="https://example.com/promo.jpg">
-                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only promo.</div>
+            <!-- Tabs -->
+            <ul class="nav nav-pills mb-4" id="mediaTab" role="tablist" style="gap:8px;">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-promo-image" data-bs-toggle="pill" data-bs-target="#pane-promo-image" type="button" role="tab" style="border-radius:999px;font-weight:600;font-size:13px;">Promo Image</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-videos" data-bs-toggle="pill" data-bs-target="#pane-videos" type="button" role="tab" style="border-radius:999px;font-weight:600;font-size:13px;">Videos</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-images" data-bs-toggle="pill" data-bs-target="#pane-images" type="button" role="tab" style="border-radius:999px;font-weight:600;font-size:13px;">Welcome &amp; Menu Images</button>
+                </li>
+            </ul>
+            <div class="tab-content" id="mediaTabContent">
+                <!-- ===== Promo Image Tab ===== -->
+                <div class="tab-pane fade show active" id="pane-promo-image" role="tabpanel">
+                    <form id="promoImageForm" class="form-section">
+                        <div class="mb-3">
+                            <label class="form-label">Image URL</label>
+                            <input type="url" id="promoImageInput" class="form-control" placeholder="https://example.com/promo.jpg">
+                            <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only promo.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload From Device</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <input type="file" id="promoImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                                <button type="button" id="promoImageUploadBtn" class="btn btn-outline-primary">Upload Promo File</button>
+                            </div>
+                            <div class="file-hint">Pick an image from your laptop and upload directly.</div>
+                        </div>
+                        <div id="promoImagePreview" class="mb-3" style="display:none;">
+                            <img id="promoImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Promo Image</button>
+                        <div id="promoImageResult" class="mt-2"></div>
+                    </form>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Upload From Device</label>
-                    <div class="d-flex flex-wrap gap-2">
-                        <input type="file" id="promoImageFile" class="form-control" accept="image/*" style="max-width:360px;">
-                        <button type="button" id="promoImageUploadBtn" class="btn btn-outline-primary">Upload Promo File</button>
+                <!-- ===== Videos Tab ===== -->
+                <div class="tab-pane fade" id="pane-videos" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Promo Video</h5>
+                            <div class="muted mb-2" style="font-size:.85rem;">Shown with the first /start promo message.</div>
+                            <form id="promoVideoForm" class="form-section">
+                                <div class="mb-3">
+                                    <label class="form-label">Video URL</label>
+                                    <input type="url" id="promoVideoInput" class="form-control" placeholder="https://example.com/promo.mp4">
+                                    <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Upload From Device</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <input type="file" id="promoVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
+                                        <button type="button" id="promoVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                                    </div>
+                                </div>
+                                <div id="promoVideoPreview" class="mb-3" style="display:none;">
+                                    <video id="promoVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">Save Promo Video</button>
+                                <div id="promoVideoResult" class="mt-2"></div>
+                            </form>
+                        </div>
+                        <div class="col-md-6">
+                            <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Welcome Video</h5>
+                            <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
+                            <form id="welcomeVideoForm" class="form-section">
+                                <div class="mb-3">
+                                    <label class="form-label">Video URL</label>
+                                    <input type="url" id="welcomeVideoInput" class="form-control" placeholder="https://example.com/welcome.mp4">
+                                    <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Upload From Device</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <input type="file" id="welcomeVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
+                                        <button type="button" id="welcomeVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                                    </div>
+                                </div>
+                                <div id="welcomeVideoPreview" class="mb-3" style="display:none;">
+                                    <video id="welcomeVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">Save Welcome Video</button>
+                                <div id="welcomeVideoResult" class="mt-2"></div>
+                            </form>
+                        </div>
                     </div>
-                    <div class="file-hint">Pick an image from your laptop and upload directly.</div>
                 </div>
-                <div id="promoImagePreview" class="mb-3" style="display:none;">
-                    <img id="promoImageImg" src="" style="max-width:300px;max-height:200px;border-radius:8px;border:1px solid #e5e7eb;">
-                </div>
-                <button type="submit" class="btn btn-primary">Save Promo Image</button>
-                <div id="promoImageResult" class="mt-2"></div>
-            </form>
-        </div>
-        <div class="panel-card mt-4">
-            <div class="section-header">
-                <div>
-                    <h2>Start Videos</h2>
-                    <div class="muted">Set videos shown with the /start messages.</div>
-                </div>
-                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
-            </div>
-            <div class="row g-4">
-                <div class="col-md-6">
-                    <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Promo Video</h5>
-                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the first /start promo message.</div>
-                    <form id="promoVideoForm" class="form-section">
-                        <div class="mb-3">
-                            <label class="form-label">Video URL</label>
-                            <input type="url" id="promoVideoInput" class="form-control" placeholder="https://example.com/promo.mp4">
-                            <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
+                <!-- ===== Welcome & Menu Images Tab ===== -->
+                <div class="tab-pane fade" id="pane-images" role="tabpanel">
+                    <div class="row g-4">
+                        <!-- Welcome Image column -->
+                        <div class="col-md-6">
+                            <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Welcome Image</h5>
+                            <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
+                            <form id="welcomeImageForm" class="form-section">
+                                <div class="mb-3">
+                                    <label class="form-label">Image URL</label>
+                                    <input type="url" id="welcomeImageInput" class="form-control" placeholder="https://example.com/welcome.jpg">
+                                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to reuse the promo image.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Upload From Device</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <input type="file" id="welcomeImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                                        <button type="button" id="welcomeImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                                    </div>
+                                </div>
+                                <div id="welcomeImagePreview" class="mb-3" style="display:none;">
+                                    <img id="welcomeImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">Save Welcome Image</button>
+                                <div id="welcomeImageResult" class="mt-2"></div>
+                            </form>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Upload From Device</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                <input type="file" id="promoVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
-                                <button type="button" id="promoVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
-                            </div>
+                        <!-- Menu Image column -->
+                        <div class="col-md-6">
+                            <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Menu Image</h5>
+                            <div class="muted mb-2" style="font-size:.85rem;">Shown only with the /menu command.</div>
+                            <form id="menuImageForm" class="form-section">
+                                <div class="mb-3">
+                                    <label class="form-label">Image URL</label>
+                                    <input type="url" id="menuImageInput" class="form-control" placeholder="https://example.com/menu.jpg">
+                                    <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only menu.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Upload From Device</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <input type="file" id="menuImageFile" class="form-control" accept="image/*" style="max-width:360px;">
+                                        <button type="button" id="menuImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                                    </div>
+                                </div>
+                                <div id="menuImagePreview" class="mb-3" style="display:none;">
+                                    <img id="menuImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">Save Menu Image</button>
+                                <div id="menuImageResult" class="mt-2"></div>
+                            </form>
                         </div>
-                        <div id="promoVideoPreview" class="mb-3" style="display:none;">
-                            <video id="promoVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm">Save Promo Video</button>
-                        <div id="promoVideoResult" class="mt-2"></div>
-                    </form>
-                </div>
-                <div class="col-md-6">
-                    <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Welcome Video</h5>
-                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
-                    <form id="welcomeVideoForm" class="form-section">
-                        <div class="mb-3">
-                            <label class="form-label">Video URL</label>
-                            <input type="url" id="welcomeVideoInput" class="form-control" placeholder="https://example.com/welcome.mp4">
-                            <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Upload From Device</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                <input type="file" id="welcomeVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
-                                <button type="button" id="welcomeVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
-                            </div>
-                        </div>
-                        <div id="welcomeVideoPreview" class="mb-3" style="display:none;">
-                            <video id="welcomeVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm">Save Welcome Video</button>
-                        <div id="welcomeVideoResult" class="mt-2"></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="panel-card mt-4">
-            <div class="section-header">
-                <div>
-                    <h2>Welcome &amp; Menu Images</h2>
-                    <div class="muted">Manage bot images for /start welcome and /menu commands.</div>
-                </div>
-                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
-            </div>
-            <div class="row g-4">
-                <!-- Welcome Image column -->
-                <div class="col-md-6">
-                    <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Welcome Image</h5>
-                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
-                    <form id="welcomeImageForm" class="form-section">
-                        <div class="mb-3">
-                            <label class="form-label">Image URL</label>
-                            <input type="url" id="welcomeImageInput" class="form-control" placeholder="https://example.com/welcome.jpg">
-                            <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to reuse the promo image.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Upload From Device</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                <input type="file" id="welcomeImageFile" class="form-control" accept="image/*" style="max-width:360px;">
-                                <button type="button" id="welcomeImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
-                            </div>
-                        </div>
-                        <div id="welcomeImagePreview" class="mb-3" style="display:none;">
-                            <img id="welcomeImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm">Save Welcome Image</button>
-                        <div id="welcomeImageResult" class="mt-2"></div>
-                    </form>
-                </div>
-                <!-- Menu Image column -->
-                <div class="col-md-6">
-                    <h5 class="mb-3" style="font-weight:600;color:#1c1b1a;">Menu Image</h5>
-                    <div class="muted mb-2" style="font-size:.85rem;">Shown only with the /menu command.</div>
-                    <form id="menuImageForm" class="form-section">
-                        <div class="mb-3">
-                            <label class="form-label">Image URL</label>
-                            <input type="url" id="menuImageInput" class="form-control" placeholder="https://example.com/menu.jpg">
-                            <div class="file-hint">Direct image link (jpg/png/gif/webp). Leave empty to send text-only menu.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Upload From Device</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                <input type="file" id="menuImageFile" class="form-control" accept="image/*" style="max-width:360px;">
-                                <button type="button" id="menuImageUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
-                            </div>
-                        </div>
-                        <div id="menuImagePreview" class="mb-3" style="display:none;">
-                            <img id="menuImageImg" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #e5e7eb;">
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm">Save Menu Image</button>
-                        <div id="menuImageResult" class="mt-2"></div>
-                    </form>
+                    </div>
                 </div>
             </div>
         </div>
