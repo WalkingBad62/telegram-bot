@@ -83,6 +83,15 @@
                 align-items: start;
             }
         }
+        .broadcast-panel {
+            width: min(1100px, 100%);
+            margin: 0 auto;
+        }
+        @media (min-width: 992px) {
+            .broadcast-panel {
+                grid-column: 1 / -1;
+            }
+        }
         .panel-card {
             background: var(--card);
             border-radius: 20px;
@@ -375,7 +384,7 @@
             font-size: 14px;
         }
         .user-select-height {
-            height: 120px;
+            height: 160px;
         }
         .message-min-height {
             min-height: 140px;
@@ -436,7 +445,7 @@
             </div>
         </div>
         <div class="grid">
-            <div class="panel-card">
+            <div class="panel-card broadcast-panel">
                 <div class="section-header">
                     <div>
                         <h2>Broadcast Center</h2>
@@ -455,7 +464,7 @@
                             <button type="button" id="selectVisibleUsersBtn" class="btn btn-outline-primary btn-sm">Select Visible</button>
                             <button type="button" id="clearSelectedUsersBtn" class="btn btn-outline-secondary btn-sm">Clear Selected</button>
                         </div>
-                        <select id="unifiedUserSelect" name="user_ids" multiple class="form-select" style="height:120px;"></select>
+                        <select id="unifiedUserSelect" name="user_ids" multiple class="form-select user-select-height"></select>
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="unifiedAllUsers">
