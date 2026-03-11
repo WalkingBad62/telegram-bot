@@ -2522,6 +2522,9 @@ async def forward_any(update, context, users):
             pass
 
 # ================= APP =================
+if not TOKEN:
+    raise RuntimeError("Missing BOT_TOKEN. Set BOT_TOKEN or BOT_TOKEN_{MODE_SUFFIX} in .env.")
+
 init_usage_db()
 app = ApplicationBuilder().token(TOKEN).build()
 

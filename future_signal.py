@@ -1,15 +1,23 @@
 
+import os
+import sys
+import argparse
+import asyncio
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
 try:
-    import os
-    import sys
-    import argparse
-    import asyncio
     import pandas as pd
     from BinaryOptionsToolsV2.pocketoption import PocketOptionAsync  # type: ignore
-    from datetime import datetime, timedelta, timezone
-    from zoneinfo import ZoneInfo
 except ImportError:
-    os.system('pip install -r requirements.txt')
+    os.system("pip install -r requirements.txt")
+    try:
+        import pandas as pd
+        from BinaryOptionsToolsV2.pocketoption import PocketOptionAsync  # type: ignore
+    except ImportError as exc:
+        raise SystemExit(
+            "Missing dependencies after install. Run: pip install -r requirements.txt"
+        ) from exc
 
 # Force UTF-8 for stdout/stderr to prevent mojibake on Windows
 try:

@@ -24,6 +24,11 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=False)
 
 # --- Configuration ---
 DB_NAME = os.getenv("DATABASE_URL", "bot_users.db")
+if "://" in DB_NAME and not DB_NAME.startswith("sqlite"):
+    raise RuntimeError(
+        "DATABASE_URL looks like a non-SQLite URL, but this app uses sqlite3. "
+        "Set DATABASE_URL to a local .db path."
+    )
 USAGE_DB_PATH = os.path.join(BASE_DIR, "bot_usage.db")
 FEATURE_USAGE_LIMIT_DEFAULT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT_DEFAULT < 1:
@@ -2599,8 +2604,20 @@ async def send_message_bulk(request: Request):
     message = data.get("message", "")
     all_users = data.get("all", False)
     user_ids = data.get("user_ids", [])
-    # Ensure user_ids are integers
-    user_ids = [int(uid) for uid in user_ids]
+    def _parse_user_ids(raw):
+        ids = []
+        invalid = []
+        if raw is None:
+            return ids, invalid
+        if isinstance(raw, str):
+            raw = [s for s in raw.split(",") if s.strip()]
+        for uid in raw:
+            try:
+                ids.append(int(uid))
+            except (TypeError, ValueError):
+                invalid.append(uid)
+        return ids, invalid
+    user_ids, invalid_ids = _parse_user_ids(user_ids)
     sent = []
     failed = []
     # Get all user ids from DB if 'all' is selected
@@ -2609,6 +2626,9 @@ async def send_message_bulk(request: Request):
             c = conn.cursor()
             c.execute("SELECT telegram_id FROM users")
             user_ids = [row[0] for row in c.fetchall()]
+        invalid_ids = []
+    for bad in invalid_ids:
+        failed.append({"user_id": bad, "error": "Invalid user id"})
     for uid in user_ids:
         try:
             resp = requests.post(f"{TELEGRAM_API_URL}/sendMessage", data={"chat_id": uid, "text": message})
@@ -2659,10 +2679,21 @@ async def send_image_bulk(request: Request, user_ids: str = Form(...), file: Upl
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     try:
         # user_ids is a comma-separated string from the form
-        user_id_list = [int(uid) for uid in user_ids.split(",") if uid.strip()]
+        raw_ids = [s for s in user_ids.split(",") if s.strip()]
+        user_id_list = []
+        invalid_ids = []
+        for uid in raw_ids:
+            try:
+                user_id_list.append(int(uid))
+            except (TypeError, ValueError):
+                invalid_ids.append(uid)
+        if not user_id_list:
+            return {"error": "No valid user ids provided.", "invalid": invalid_ids}
         file_bytes = await file.read()
         sent = []
         failed = []
+        for bad in invalid_ids:
+            failed.append({"user_id": bad, "error": "Invalid user id"})
         for user_id in user_id_list:
             files = {"photo": (file.filename, file_bytes)}
             data = {"chat_id": user_id}
@@ -2691,10 +2722,21 @@ async def send_video_bulk(request: Request, user_ids: str = Form(...), file: Upl
     if not TELEGRAM_BOT_TOKEN:
         return {"error": "TELEGRAM_BOT_TOKEN not set in environment"}
     try:
-        user_id_list = [int(uid) for uid in user_ids.split(",") if uid.strip()]
+        raw_ids = [s for s in user_ids.split(",") if s.strip()]
+        user_id_list = []
+        invalid_ids = []
+        for uid in raw_ids:
+            try:
+                user_id_list.append(int(uid))
+            except (TypeError, ValueError):
+                invalid_ids.append(uid)
+        if not user_id_list:
+            return {"error": "No valid user ids provided.", "invalid": invalid_ids}
         file_bytes = await file.read()
         sent = []
         failed = []
+        for bad in invalid_ids:
+            failed.append({"user_id": bad, "error": "Invalid user id"})
         for user_id in user_id_list:
             files = {"video": (file.filename, file_bytes)}
             data = {"chat_id": user_id}
