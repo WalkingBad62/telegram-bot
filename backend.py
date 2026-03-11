@@ -2154,6 +2154,50 @@ async def schedule_bulk_send(
     )
 
 
+@app.get("/send/schedule/list")
+async def list_scheduled_broadcasts(request: Request, limit: int = 50):
+    require_login(request)
+    safe_limit = max(1, min(int(limit or 50), 200))
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, message, run_at_utc, status, created_at, sent_at, total_users, sent_count, failed_count, last_error
+            FROM scheduled_broadcasts
+            ORDER BY run_at_utc DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        rows = c.fetchall()
+
+    items = []
+    for row in rows:
+        total_users = row[6] or 0
+        sent_count = row[7] or 0
+        failed_count = row[8] or 0
+        processed = min(total_users, sent_count + failed_count) if total_users else 0
+        percent = int((processed / total_users) * 100) if total_users else 0
+        items.append(
+            {
+                "id": row[0],
+                "message": row[1] or "",
+                "run_at_utc": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "sent_at": row[5],
+                "total_users": total_users,
+                "sent_count": sent_count,
+                "failed_count": failed_count,
+                "last_error": row[9] or "",
+                "progress_percent": min(100, max(0, percent)),
+                "can_cancel": row[3] == "pending",
+                "can_delete": row[3] in ("sent", "cancelled", "failed"),
+            }
+        )
+    return {"items": items}
+
+
 @app.get("/send/schedule/{schedule_id}")
 async def get_scheduled_broadcast(schedule_id: int, request: Request):
     require_login(request)
@@ -2267,50 +2311,6 @@ async def update_scheduled_broadcast(schedule_id: int, request: Request):
         "run_at_utc": new_run_at_iso or row[2],
         "total_users": len(new_user_ids) if new_user_ids is not None else None,
     }
-
-
-@app.get("/send/schedule/list")
-async def list_scheduled_broadcasts(request: Request, limit: int = 50):
-    require_login(request)
-    safe_limit = max(1, min(int(limit or 50), 200))
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT id, message, run_at_utc, status, created_at, sent_at, total_users, sent_count, failed_count, last_error
-            FROM scheduled_broadcasts
-            ORDER BY run_at_utc DESC, id DESC
-            LIMIT ?
-            """,
-            (safe_limit,),
-        )
-        rows = c.fetchall()
-
-    items = []
-    for row in rows:
-        total_users = row[6] or 0
-        sent_count = row[7] or 0
-        failed_count = row[8] or 0
-        processed = min(total_users, sent_count + failed_count) if total_users else 0
-        percent = int((processed / total_users) * 100) if total_users else 0
-        items.append(
-            {
-                "id": row[0],
-                "message": row[1] or "",
-                "run_at_utc": row[2],
-                "status": row[3],
-                "created_at": row[4],
-                "sent_at": row[5],
-                "total_users": total_users,
-                "sent_count": sent_count,
-                "failed_count": failed_count,
-                "last_error": row[9] or "",
-                "progress_percent": min(100, max(0, percent)),
-                "can_cancel": row[3] == "pending",
-                "can_delete": row[3] in ("sent", "cancelled", "failed"),
-            }
-        )
-    return {"items": items}
 
 
 @app.delete("/send/schedule/{schedule_id}")
