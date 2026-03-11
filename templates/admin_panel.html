@@ -218,26 +218,6 @@
         .user-search-input {
             margin-top: 8px;
         }
-        .emoji-toolbar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .emoji-btn {
-            border: 1px solid rgba(148, 163, 184, 0.45);
-            background: rgba(241, 245, 249, 0.8);
-            border-radius: 10px;
-            padding: 4px 8px;
-            line-height: 1.1;
-            font-size: 18px;
-            cursor: pointer;
-            transition: transform 120ms ease, box-shadow 120ms ease;
-        }
-        .emoji-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.16);
-        }
         .send-meta {
             color: var(--muted);
             font-size: 12px;
@@ -940,7 +920,6 @@
         const clearSelectedUsersBtn = document.getElementById('clearSelectedUsersBtn');
         const userTotalBadge = document.getElementById('userTotalBadge');
         const sendMeta = document.getElementById('sendMeta');
-        const emojiToolbar = document.getElementById('emojiToolbar');
         const startMessageInput = document.getElementById('startMessageInput');
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
@@ -976,27 +955,6 @@
             return `${clean.slice(0, limit).trim()}...`;
         }
 
-        function insertAtCursor(textarea, value) {
-            if (!textarea || !value) {
-                return;
-            }
-            const start = textarea.selectionStart ?? textarea.value.length;
-            const end = textarea.selectionEnd ?? textarea.value.length;
-            const current = textarea.value || '';
-            textarea.value = `${current.slice(0, start)}${value}${current.slice(end)}`;
-            const nextPos = start + value.length;
-            textarea.focus();
-            textarea.setSelectionRange(nextPos, nextPos);
-        }
-
-        if (emojiToolbar) {
-            emojiToolbar.querySelectorAll('[data-emoji]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const emoji = btn.dataset.emoji || '';
-                    insertAtCursor(unifiedMessage, emoji);
-                });
-            });
-        }
 
         function fileInputMeta(kind) {
             if (kind === 'image') {
