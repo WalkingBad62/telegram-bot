@@ -79,6 +79,12 @@ except ValueError:
 if TELEGRAM_API_TIMEOUT <= 0:
     TELEGRAM_API_TIMEOUT = 15.0
 try:
+    TELEGRAM_MEDIA_TIMEOUT = float(os.getenv("TELEGRAM_MEDIA_TIMEOUT", "60"))
+except ValueError:
+    TELEGRAM_MEDIA_TIMEOUT = 60.0
+if TELEGRAM_MEDIA_TIMEOUT <= 0:
+    TELEGRAM_MEDIA_TIMEOUT = 60.0
+try:
     BULK_SEND_CONCURRENCY = int(os.getenv("BULK_SEND_CONCURRENCY", "15"))
 except ValueError:
     BULK_SEND_CONCURRENCY = 15
@@ -1131,11 +1137,12 @@ async def reply_get(request: Request):
         return {"reply": "Sorry, I didn't understand 😅"}
 
 def _telegram_post(endpoint: str, data: dict, files: Optional[dict] = None):
+    timeout = TELEGRAM_MEDIA_TIMEOUT if files else TELEGRAM_API_TIMEOUT
     return requests.post(
         f"{TELEGRAM_API_URL}/{endpoint}",
         data=data,
         files=files,
-        timeout=TELEGRAM_API_TIMEOUT,
+        timeout=timeout,
     )
 
 

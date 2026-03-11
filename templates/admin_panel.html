@@ -2340,6 +2340,7 @@
                     }
                     if (rawPercent >= 100 || ['sent', 'failed', 'cancelled'].includes(data.status)) {
                         stopBroadcastProgress();
+                        const errorNote = (data.last_error || '').trim();
                         if (sendMeta) {
                             if (failedCount === 0 && totalCount > 0) {
                                 sendMeta.textContent = 'Complete: 100% sent to all.';
@@ -2351,7 +2352,11 @@
                             if (failedCount === 0 && totalCount > 0) {
                                 resultEl.innerText = `Sent to ${sentCount} user(s).`;
                             } else {
-                                resultEl.innerText = `Sent to ${sentCount}/${totalCount} user(s). Failed: ${failedCount}.`;
+                                let message = `Sent to ${sentCount}/${totalCount} user(s). Failed: ${failedCount}.`;
+                                if (errorNote) {
+                                    message += ` Reason: ${truncateText(errorNote, 220)}`;
+                                }
+                                resultEl.innerText = message;
                             }
                         }
                         loadScheduledJobs();
@@ -2578,6 +2583,9 @@
             if (!message && imageFiles.length === 0 && videoFiles.length === 0) {
                 resultEl.innerText = 'Please provide at least a message, image, or video.';
                 return;
+            }
+            if (scheduleResult) {
+                scheduleResult.textContent = '';
             }
             const formData = new FormData();
             formData.append('message', message);
