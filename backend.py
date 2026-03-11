@@ -158,6 +158,10 @@ START_IMAGE_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "start-images")
 ALLOWED_START_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_START_IMAGE_BYTES = 8 * 1024 * 1024
 os.makedirs(START_IMAGE_UPLOAD_DIR, exist_ok=True)
+START_VIDEO_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "start-videos")
+ALLOWED_START_VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".mkv"}
+MAX_START_VIDEO_BYTES = 50 * 1024 * 1024
+os.makedirs(START_VIDEO_UPLOAD_DIR, exist_ok=True)
 SCHEDULE_MEDIA_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "scheduled-media")
 try:
     SCHEDULE_MEDIA_POLL_SECONDS = float(os.getenv("SCHEDULE_MEDIA_POLL_SECONDS", "5") or "5")
@@ -187,6 +191,12 @@ def welcome_image_setting_key() -> str:
 def menu_image_setting_key() -> str:
     return f"menu_image_url_{BOT_MODE}"
 
+def promo_video_setting_key() -> str:
+    return f"promo_video_url_{BOT_MODE}"
+
+def welcome_video_setting_key() -> str:
+    return f"welcome_video_url_{BOT_MODE}"
+
 def is_valid_http_url(url: str) -> bool:
     value = (url or "").strip().lower()
     return value.startswith("http://") or value.startswith("https://")
@@ -200,7 +210,19 @@ def parse_local_image_setting(value: str) -> Optional[str]:
         return None
     return os.path.abspath(path)
 
+def parse_local_video_setting(value: str) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw.lower().startswith("local:"):
+        return None
+    path = raw[6:].strip()
+    if not path:
+        return None
+    return os.path.abspath(path)
+
 def build_local_image_setting(path: str) -> str:
+    return f"local:{os.path.abspath(path)}"
+
+def build_local_video_setting(path: str) -> str:
     return f"local:{os.path.abspath(path)}"
 
 def image_setting_to_preview_url(value: str) -> str:
@@ -211,10 +233,25 @@ def image_setting_to_preview_url(value: str) -> str:
         return f"/uploads/start-images/{filename}" if filename else ""
     return raw
 
+def video_setting_to_preview_url(value: str) -> str:
+    raw = (value or "").strip()
+    local_path = parse_local_video_setting(raw)
+    if local_path:
+        filename = os.path.basename(local_path)
+        return f"/uploads/start-videos/{filename}" if filename else ""
+    return raw
+
 def image_setting_payload(value: str) -> dict:
     raw = (value or "").strip()
     return {
         "url": image_setting_to_preview_url(raw),
+        "value": raw,
+    }
+
+def video_setting_payload(value: str) -> dict:
+    raw = (value or "").strip()
+    return {
+        "url": video_setting_to_preview_url(raw),
         "value": raw,
     }
 
@@ -223,6 +260,22 @@ def remove_uploaded_image_if_any(value: str) -> None:
     if not local_path:
         return
     root = os.path.abspath(START_IMAGE_UPLOAD_DIR)
+    try:
+        if os.path.commonpath([root, local_path]) != root:
+            return
+    except ValueError:
+        return
+    try:
+        if os.path.isfile(local_path):
+            os.remove(local_path)
+    except OSError:
+        pass
+
+def remove_uploaded_video_if_any(value: str) -> None:
+    local_path = parse_local_video_setting(value)
+    if not local_path:
+        return
+    root = os.path.abspath(START_VIDEO_UPLOAD_DIR)
     try:
         if os.path.commonpath([root, local_path]) != root:
             return
@@ -255,6 +308,31 @@ async def save_uploaded_start_image(file: UploadFile) -> str:
         f"{secrets.token_hex(6)}{ext}"
     )
     file_path = os.path.abspath(os.path.join(START_IMAGE_UPLOAD_DIR, filename))
+    with open(file_path, "wb") as f:
+        f.write(content)
+    return file_path
+
+async def save_uploaded_start_video(file: UploadFile) -> str:
+    original_name = (file.filename or "").strip()
+    ext = os.path.splitext(original_name)[1].lower()
+    content_type = (file.content_type or "").lower()
+    if ext not in ALLOWED_START_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Use MP4, MOV, WEBM, or MKV.",
+        )
+    if content_type and not content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Only video files are allowed.")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > MAX_START_VIDEO_BYTES:
+        raise HTTPException(status_code=400, detail="Video is too large (max 50MB).")
+    filename = (
+        f"{BOT_MODE}_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+        f"{secrets.token_hex(6)}{ext}"
+    )
+    file_path = os.path.abspath(os.path.join(START_VIDEO_UPLOAD_DIR, filename))
     with open(file_path, "wb") as f:
         f.write(content)
     return file_path
@@ -369,6 +447,14 @@ def init_db():
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (welcome_image_setting_key(), "")
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (promo_video_setting_key(), "")
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (welcome_video_setting_key(), "")
         )
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
@@ -619,6 +705,7 @@ templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
 app.mount("/uploads/start-images", StaticFiles(directory=START_IMAGE_UPLOAD_DIR), name="start_images")
+app.mount("/uploads/start-videos", StaticFiles(directory=START_VIDEO_UPLOAD_DIR), name="start_videos")
 
 def env_bool(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
@@ -748,6 +835,40 @@ async def upload_promo_image(request: Request, file: UploadFile = File(...)):
     payload = image_setting_payload(new_value)
     return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
+# --- Promo video settings ---
+@app.get("/settings/promo-video")
+def get_promo_video():
+    payload = video_setting_payload(get_setting(promo_video_setting_key(), ""))
+    return {"url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.put("/settings/promo-video")
+async def update_promo_video(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    if url and not is_valid_http_url(url):
+        raise HTTPException(status_code=400, detail="Video URL must start with http:// or https://")
+    old_value = get_setting(promo_video_setting_key(), "")
+    set_setting(promo_video_setting_key(), url)
+    if old_value != url:
+        remove_uploaded_video_if_any(old_value)
+    payload = video_setting_payload(url)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.post("/settings/promo-video/upload")
+async def upload_promo_video(request: Request, file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
+    saved_path = await save_uploaded_start_video(file)
+    new_value = build_local_video_setting(saved_path)
+    old_value = get_setting(promo_video_setting_key(), "")
+    set_setting(promo_video_setting_key(), new_value)
+    if old_value != new_value:
+        remove_uploaded_video_if_any(old_value)
+    payload = video_setting_payload(new_value)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
 # --- Welcome image settings ---
 @app.get("/settings/welcome-image")
 def get_welcome_image():
@@ -780,6 +901,40 @@ async def upload_welcome_image(request: Request, file: UploadFile = File(...)):
     if old_value != new_value:
         remove_uploaded_image_if_any(old_value)
     payload = image_setting_payload(new_value)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+# --- Welcome video settings ---
+@app.get("/settings/welcome-video")
+def get_welcome_video():
+    payload = video_setting_payload(get_setting(welcome_video_setting_key(), ""))
+    return {"url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.put("/settings/welcome-video")
+async def update_welcome_video(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    if url and not is_valid_http_url(url):
+        raise HTTPException(status_code=400, detail="Video URL must start with http:// or https://")
+    old_value = get_setting(welcome_video_setting_key(), "")
+    set_setting(welcome_video_setting_key(), url)
+    if old_value != url:
+        remove_uploaded_video_if_any(old_value)
+    payload = video_setting_payload(url)
+    return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
+
+@app.post("/settings/welcome-video/upload")
+async def upload_welcome_video(request: Request, file: UploadFile = File(...)):
+    require_login(request)
+    require_csrf(request)
+    saved_path = await save_uploaded_start_video(file)
+    new_value = build_local_video_setting(saved_path)
+    old_value = get_setting(welcome_video_setting_key(), "")
+    set_setting(welcome_video_setting_key(), new_value)
+    if old_value != new_value:
+        remove_uploaded_video_if_any(old_value)
+    payload = video_setting_payload(new_value)
     return {"ok": True, "url": payload["url"], "value": payload["value"], "mode": BOT_MODE}
 
 # --- Menu image settings ---
@@ -1400,13 +1555,33 @@ async def _send_bulk_payload_to_users(
     prepared_images: List[dict],
     prepared_videos: List[dict],
     prepared_stickers: List[dict],
-) -> Tuple[List[int], List[dict]]:
+    progress_cb: Optional[Any] = None,
+) -> Tuple[List[int], List[dict], List[int]]:
     if not user_id_list:
-        return [], []
+        return [], [], []
 
     results = []
     shared_media_refs: List[dict] = []
     has_media = bool(prepared_images or prepared_videos)
+    total_users = len(user_id_list)
+    sent_count = 0
+    failed_count = 0
+    progress_lock = asyncio.Lock()
+
+    async def _update_progress(success: bool):
+        nonlocal sent_count, failed_count
+        async with progress_lock:
+            if success:
+                sent_count += 1
+            else:
+                failed_count += 1
+            if progress_cb:
+                try:
+                    result = progress_cb(sent_count, failed_count, total_users)
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    pass
 
     remaining_users = list(user_id_list)
     if has_media and remaining_users:
@@ -1422,6 +1597,7 @@ async def _send_bulk_payload_to_users(
             True,
         )
         results.append(seed_result)
+        await _update_progress(bool(seed_result.get("success")))
         seed_media_refs = seed_result.get("media_refs") or []
         expected_media_count = len(prepared_images) + len(prepared_videos)
         if (
@@ -1434,7 +1610,7 @@ async def _send_bulk_payload_to_users(
 
     async def _send(uid: int):
         async with semaphore:
-            return await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 _send_bulk_to_single_user,
                 uid,
                 text,
@@ -1444,15 +1620,18 @@ async def _send_bulk_payload_to_users(
                 shared_media_refs or None,
                 False,
             )
+            await _update_progress(bool(result.get("success")))
+            return result
 
     if remaining_users:
         batch_results = await asyncio.gather(*[_send(uid) for uid in remaining_users])
         results.extend(batch_results)
     sent = [entry["user_id"] for entry in results if entry.get("success")]
+    failed_users = [entry["user_id"] for entry in results if not entry.get("success")]
     failed = []
     for entry in results:
         failed.extend(entry.get("failed", []))
-    return sent, failed
+    return sent, failed, failed_users
 
 
 def _claim_due_scheduled_job(now_iso: str) -> Optional[Dict[str, Any]]:
@@ -1515,6 +1694,25 @@ def _finalize_scheduled_job(
         conn.commit()
 
 
+def _update_scheduled_progress(
+    job_id: int,
+    sent_count: int,
+    failed_count: int,
+    total_users: int,
+) -> None:
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE scheduled_broadcasts
+            SET sent_count = ?, failed_count = ?, total_users = ?
+            WHERE id = ?
+            """,
+            (sent_count, failed_count, total_users, job_id),
+        )
+        conn.commit()
+
+
 async def _process_scheduled_job(job: Dict[str, Any]) -> None:
     payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
     message = (payload.get("message") or "").strip()
@@ -1552,12 +1750,25 @@ async def _process_scheduled_job(job: Dict[str, Any]) -> None:
         _cleanup_attachment_files(attachments)
         return
 
-    sent, failed = await _send_bulk_payload_to_users(
+    async def _progress_update(sent_count: int, failed_count: int, total_count: int):
+        try:
+            await asyncio.to_thread(
+                _update_scheduled_progress,
+                job["id"],
+                sent_count,
+                failed_count,
+                total_count,
+            )
+        except Exception:
+            return
+
+    sent, failed, failed_users = await _send_bulk_payload_to_users(
         user_id_list,
         message,
         prepared_images,
         prepared_videos,
         prepared_stickers,
+        _progress_update,
     )
     status = "sent" if sent else "failed"
     error_note = ""
@@ -1572,7 +1783,7 @@ async def _process_scheduled_job(job: Dict[str, Any]) -> None:
         status,
         len(user_id_list),
         len(sent),
-        len(failed),
+        len(failed_users),
         error_note,
     )
     _cleanup_attachment_files(attachments)
@@ -1648,7 +1859,7 @@ async def send_all_bulk(
             status_code=400,
         )
 
-    sent, failed = await _send_bulk_payload_to_users(
+    sent, failed, failed_users = await _send_bulk_payload_to_users(
         user_id_list,
         text,
         prepared_images,
@@ -1661,7 +1872,136 @@ async def send_all_bulk(
             "success": True,
             "sent": sent,
             "failed": failed,
+            "failed_users": failed_users,
             "total": len(user_id_list),
+            "sent_count": len(sent),
+            "failed_count": len(failed_users),
+            "requested": {
+                "text": bool(text),
+                "images": len(prepared_images),
+                "videos": len(prepared_videos),
+                "stickers": len(prepared_stickers),
+            },
+        }
+    )
+
+
+@app.post("/send/all/bulk/async")
+async def send_all_bulk_async(
+    request: Request,
+    user_ids: str = Form(...),
+    message: str = Form(""),
+    images: List[UploadFile] = File([]),
+    videos: List[UploadFile] = File([]),
+    stickers: List[UploadFile] = File([]),
+):
+    require_login(request)
+    require_csrf(request)
+    if not TELEGRAM_BOT_TOKEN:
+        return JSONResponse(
+            {"success": False, "error": "TELEGRAM_BOT_TOKEN not set in environment"},
+            status_code=500,
+        )
+
+    user_id_list = _parse_user_ids(user_ids)
+    if not user_id_list:
+        return JSONResponse(
+            {"success": False, "error": "No valid user IDs provided."},
+            status_code=400,
+        )
+
+    prepared_images = await _prepare_uploaded_files(
+        images,
+        "image",
+        MAX_SCHEDULE_IMAGE_BYTES,
+        content_prefix="image/",
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+    prepared_videos = await _prepare_uploaded_files(
+        videos,
+        "video",
+        MAX_SCHEDULE_VIDEO_BYTES,
+        content_prefix="video/",
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+    prepared_stickers = await _prepare_uploaded_files(
+        stickers,
+        "sticker",
+        MAX_SCHEDULE_STICKER_BYTES,
+        allowed_extensions=ALLOWED_SCHEDULE_STICKER_EXTENSIONS,
+        limit=MAX_SCHEDULE_ITEMS_PER_TYPE,
+    )
+
+    text = (message or "").strip()
+    if len(text) > MAX_SCHEDULE_TEXT_LENGTH:
+        return JSONResponse(
+            {"success": False, "error": f"Message too long. Max {MAX_SCHEDULE_TEXT_LENGTH} characters."},
+            status_code=400,
+        )
+    if not text and not prepared_images and not prepared_videos and not prepared_stickers:
+        return JSONResponse(
+            {"success": False, "error": "Please provide at least a message, image, video, or sticker."},
+            status_code=400,
+        )
+
+    all_media = prepared_images + prepared_videos + prepared_stickers
+    stored_attachments: List[dict] = []
+    try:
+        stored_attachments = _persist_scheduled_files(all_media)
+    except Exception as exc:
+        _cleanup_attachment_files(stored_attachments)
+        return JSONResponse(
+            {"success": False, "error": f"Failed to save scheduled media: {str(exc)[:300]}"},
+            status_code=500,
+        )
+
+    payload = {
+        "message": text,
+        "user_ids": user_id_list,
+        "attachments": stored_attachments,
+    }
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    now_iso = _to_utc_iso(_utc_now())
+    run_at_iso = now_iso
+    message_preview = text if len(text) <= 180 else text[:180].rstrip() + "..."
+
+    schedule_id = None
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                INSERT INTO scheduled_broadcasts (
+                    message,
+                    user_ids,
+                    run_at_utc,
+                    status,
+                    payload_json,
+                    created_at,
+                    total_users
+                ) VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    message_preview,
+                    ",".join([str(uid) for uid in user_id_list]),
+                    run_at_iso,
+                    payload_json,
+                    now_iso,
+                    len(user_id_list),
+                ),
+            )
+            conn.commit()
+            schedule_id = c.lastrowid
+    except Exception:
+        _cleanup_attachment_files(stored_attachments)
+        raise
+
+    return JSONResponse(
+        {
+            "success": True,
+            "schedule_id": schedule_id,
+            "run_at_utc": run_at_iso,
+            "total_users": len(user_id_list),
             "requested": {
                 "text": bool(text),
                 "images": len(prepared_images),
@@ -1807,6 +2147,121 @@ async def schedule_bulk_send(
     )
 
 
+@app.get("/send/schedule/{schedule_id}")
+async def get_scheduled_broadcast(schedule_id: int, request: Request):
+    require_login(request)
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, message, run_at_utc, status, created_at, sent_at, total_users, sent_count, failed_count, last_error
+            FROM scheduled_broadcasts
+            WHERE id = ?
+            """,
+            (schedule_id,),
+        )
+        row = c.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Scheduled job not found.")
+    total_users = row[6] or 0
+    sent_count = row[7] or 0
+    failed_count = row[8] or 0
+    processed = min(total_users, sent_count + failed_count) if total_users else 0
+    percent = int((processed / total_users) * 100) if total_users else 0
+    return {
+        "id": row[0],
+        "message": row[1] or "",
+        "run_at_utc": row[2],
+        "status": row[3],
+        "created_at": row[4],
+        "sent_at": row[5],
+        "total_users": total_users,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "last_error": row[9] or "",
+        "progress_percent": min(100, max(0, percent)),
+    }
+
+
+@app.put("/send/schedule/{schedule_id}")
+async def update_scheduled_broadcast(schedule_id: int, request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    run_at_raw = (data.get("run_at") or "").strip()
+    user_ids_raw = data.get("user_ids", None)
+
+    new_run_at_iso = ""
+    if run_at_raw:
+        run_at_utc = _parse_run_at_utc(run_at_raw)
+        if run_at_utc <= (_utc_now() + timedelta(seconds=3)):
+            raise HTTPException(status_code=400, detail="Schedule time must be in the future.")
+        new_run_at_iso = _to_utc_iso(run_at_utc)
+
+    new_user_ids: Optional[List[int]] = None
+    if user_ids_raw is not None:
+        if isinstance(user_ids_raw, list):
+            joined = ",".join([str(x) for x in user_ids_raw])
+            new_user_ids = _parse_user_ids(joined)
+        elif isinstance(user_ids_raw, str):
+            new_user_ids = _parse_user_ids(user_ids_raw)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid user_ids format.")
+        if not new_user_ids:
+            raise HTTPException(status_code=400, detail="No valid user IDs provided.")
+
+    if not new_run_at_iso and new_user_ids is None:
+        raise HTTPException(status_code=400, detail="No updates provided.")
+
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT status, payload_json, run_at_utc, user_ids FROM scheduled_broadcasts WHERE id = ?",
+            (schedule_id,),
+        )
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scheduled job not found.")
+        status = row[0]
+        if status != "pending":
+            raise HTTPException(status_code=400, detail=f"Only pending jobs can be updated. Current status: {status}")
+        payload_raw = row[1] or "{}"
+        try:
+            payload = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            payload = {}
+        if new_user_ids is not None:
+            payload["user_ids"] = new_user_ids
+        payload_json = json.dumps(payload, ensure_ascii=False)
+
+        updates = []
+        params = []
+        if new_run_at_iso:
+            updates.append("run_at_utc = ?")
+            params.append(new_run_at_iso)
+        if new_user_ids is not None:
+            updates.append("user_ids = ?")
+            params.append(",".join([str(uid) for uid in new_user_ids]))
+            updates.append("total_users = ?")
+            params.append(len(new_user_ids))
+        updates.append("payload_json = ?")
+        params.append(payload_json)
+        params.append(schedule_id)
+
+        c.execute(
+            f"UPDATE scheduled_broadcasts SET {', '.join(updates)} WHERE id = ?",
+            tuple(params),
+        )
+        conn.commit()
+
+    return {
+        "ok": True,
+        "id": schedule_id,
+        "run_at_utc": new_run_at_iso or row[2],
+        "total_users": len(new_user_ids) if new_user_ids is not None else None,
+    }
+
+
 @app.get("/send/schedule/list")
 async def list_scheduled_broadcasts(request: Request, limit: int = 50):
     require_login(request)
@@ -1826,6 +2281,11 @@ async def list_scheduled_broadcasts(request: Request, limit: int = 50):
 
     items = []
     for row in rows:
+        total_users = row[6] or 0
+        sent_count = row[7] or 0
+        failed_count = row[8] or 0
+        processed = min(total_users, sent_count + failed_count) if total_users else 0
+        percent = int((processed / total_users) * 100) if total_users else 0
         items.append(
             {
                 "id": row[0],
@@ -1834,10 +2294,11 @@ async def list_scheduled_broadcasts(request: Request, limit: int = 50):
                 "status": row[3],
                 "created_at": row[4],
                 "sent_at": row[5],
-                "total_users": row[6] or 0,
-                "sent_count": row[7] or 0,
-                "failed_count": row[8] or 0,
+                "total_users": total_users,
+                "sent_count": sent_count,
+                "failed_count": failed_count,
                 "last_error": row[9] or "",
+                "progress_percent": min(100, max(0, percent)),
                 "can_cancel": row[3] == "pending",
                 "can_delete": row[3] in ("sent", "cancelled", "failed"),
             }

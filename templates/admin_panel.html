@@ -615,6 +615,7 @@
                                 <th>Status</th>
                                 <th>Targets</th>
                                 <th>Sent/Failed</th>
+                                <th>Progress</th>
                                 <th>Message</th>
                                 <th>Action</th>
                             </tr>
@@ -712,6 +713,63 @@
                 <button type="submit" class="btn btn-primary">Save Promo Image</button>
                 <div id="promoImageResult" class="mt-2"></div>
             </form>
+        </div>
+        <div class="panel-card mt-4">
+            <div class="section-header">
+                <div>
+                    <h2>Start Videos</h2>
+                    <div class="muted">Set videos shown with the /start messages.</div>
+                </div>
+                <div class="tag" style="background: rgba(16,185,129,0.12); color: #047857;">Bot Flow</div>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <h5 class="mb-3" style="font-weight:600;color:#e2e8f0;">Promo Video</h5>
+                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the first /start promo message.</div>
+                    <form id="promoVideoForm" class="form-section">
+                        <div class="mb-3">
+                            <label class="form-label">Video URL</label>
+                            <input type="url" id="promoVideoInput" class="form-control" placeholder="https://example.com/promo.mp4">
+                            <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload From Device</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <input type="file" id="promoVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
+                                <button type="button" id="promoVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                            </div>
+                        </div>
+                        <div id="promoVideoPreview" class="mb-3" style="display:none;">
+                            <video id="promoVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Promo Video</button>
+                        <div id="promoVideoResult" class="mt-2"></div>
+                    </form>
+                </div>
+                <div class="col-md-6">
+                    <h5 class="mb-3" style="font-weight:600;color:#e2e8f0;">Welcome Video</h5>
+                    <div class="muted mb-2" style="font-size:.85rem;">Shown with the second /start welcome message.</div>
+                    <form id="welcomeVideoForm" class="form-section">
+                        <div class="mb-3">
+                            <label class="form-label">Video URL</label>
+                            <input type="url" id="welcomeVideoInput" class="form-control" placeholder="https://example.com/welcome.mp4">
+                            <div class="file-hint">Direct video link (mp4/mov/webm/mkv). Leave empty to skip video.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload From Device</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <input type="file" id="welcomeVideoFile" class="form-control" accept="video/*" style="max-width:360px;">
+                                <button type="button" id="welcomeVideoUploadBtn" class="btn btn-outline-primary btn-sm">Upload</button>
+                            </div>
+                        </div>
+                        <div id="welcomeVideoPreview" class="mb-3" style="display:none;">
+                            <video id="welcomeVideoPlayer" src="" controls style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #e5e7eb;"></video>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Welcome Video</button>
+                        <div id="welcomeVideoResult" class="mt-2"></div>
+                    </form>
+                </div>
+            </div>
         </div>
         <div class="panel-card mt-4">
             <div class="section-header">
@@ -900,6 +958,81 @@
             </div>
         </div>
     </div>
+    <div class="modal fade" id="broadcastConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content confirm-modal">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="broadcastConfirmTitle">Confirm Broadcast</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="broadcastConfirmIntro">Please confirm the broadcast details before sending.</div>
+                    <div class="confirm-details">
+                        <div class="detail-row">
+                            <div class="detail-label">Recipients</div>
+                            <div id="broadcastConfirmRecipients" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Message</div>
+                            <div id="broadcastConfirmMessage" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Images</div>
+                            <div id="broadcastConfirmImages" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Videos</div>
+                            <div id="broadcastConfirmVideos" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row" id="broadcastConfirmScheduleRow" style="display:none;">
+                            <div class="detail-label">Schedule</div>
+                            <div id="broadcastConfirmSchedule" class="detail-value"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="broadcastConfirmSendBtn" class="btn btn-primary">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="rescheduleModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content confirm-modal">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reschedule Broadcast <span id="rescheduleIdLabel"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirm-details">
+                        <div class="detail-row">
+                            <div class="detail-label">Current Time</div>
+                            <div id="rescheduleCurrentTime" class="detail-value"></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Targets</div>
+                            <div id="rescheduleTargets" class="detail-value"></div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label">New Schedule Time</label>
+                        <input type="datetime-local" id="rescheduleRunAtInput" class="form-control">
+                    </div>
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" id="rescheduleUpdateRecipients">
+                        <label class="form-check-label" for="rescheduleUpdateRecipients">Update recipients using current selection</label>
+                    </div>
+                    <div class="file-hint">Uses "Send to All Users" or the selected members from the broadcast form.</div>
+                    <div id="rescheduleResult" class="mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="rescheduleSaveBtn" class="btn btn-primary">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -939,8 +1072,29 @@
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
         const scheduledTableBody = document.getElementById('scheduledTableBody');
+        const broadcastConfirmModal = new bootstrap.Modal(document.getElementById('broadcastConfirmModal'));
+        const broadcastConfirmTitle = document.getElementById('broadcastConfirmTitle');
+        const broadcastConfirmRecipients = document.getElementById('broadcastConfirmRecipients');
+        const broadcastConfirmMessage = document.getElementById('broadcastConfirmMessage');
+        const broadcastConfirmImages = document.getElementById('broadcastConfirmImages');
+        const broadcastConfirmVideos = document.getElementById('broadcastConfirmVideos');
+        const broadcastConfirmScheduleRow = document.getElementById('broadcastConfirmScheduleRow');
+        const broadcastConfirmSchedule = document.getElementById('broadcastConfirmSchedule');
+        const broadcastConfirmSendBtn = document.getElementById('broadcastConfirmSendBtn');
+        const rescheduleModal = new bootstrap.Modal(document.getElementById('rescheduleModal'));
+        const rescheduleIdLabel = document.getElementById('rescheduleIdLabel');
+        const rescheduleCurrentTime = document.getElementById('rescheduleCurrentTime');
+        const rescheduleTargets = document.getElementById('rescheduleTargets');
+        const rescheduleRunAtInput = document.getElementById('rescheduleRunAtInput');
+        const rescheduleUpdateRecipients = document.getElementById('rescheduleUpdateRecipients');
+        const rescheduleResult = document.getElementById('rescheduleResult');
+        const rescheduleSaveBtn = document.getElementById('rescheduleSaveBtn');
         let allUsersCache = [];
         let broadcastUsersCache = [];
+        let activeScheduleId = null;
+        let pendingBroadcastMode = "";
+        let pendingBroadcastRecipients = null;
+        let broadcastProgressTimer = null;
 
         function truncateText(text, limit) {
             if (!text) return "";
@@ -1192,6 +1346,13 @@
         const promoImageResult = document.getElementById('promoImageResult');
         const promoImagePreview = document.getElementById('promoImagePreview');
         const promoImageImg = document.getElementById('promoImageImg');
+        const promoVideoForm = document.getElementById('promoVideoForm');
+        const promoVideoInput = document.getElementById('promoVideoInput');
+        const promoVideoFile = document.getElementById('promoVideoFile');
+        const promoVideoUploadBtn = document.getElementById('promoVideoUploadBtn');
+        const promoVideoResult = document.getElementById('promoVideoResult');
+        const promoVideoPreview = document.getElementById('promoVideoPreview');
+        const promoVideoPlayer = document.getElementById('promoVideoPlayer');
         const welcomeImageForm = document.getElementById('welcomeImageForm');
         const welcomeImageInput = document.getElementById('welcomeImageInput');
         const welcomeImageFile = document.getElementById('welcomeImageFile');
@@ -1199,6 +1360,13 @@
         const welcomeImageResult = document.getElementById('welcomeImageResult');
         const welcomeImagePreview = document.getElementById('welcomeImagePreview');
         const welcomeImageImg = document.getElementById('welcomeImageImg');
+        const welcomeVideoForm = document.getElementById('welcomeVideoForm');
+        const welcomeVideoInput = document.getElementById('welcomeVideoInput');
+        const welcomeVideoFile = document.getElementById('welcomeVideoFile');
+        const welcomeVideoUploadBtn = document.getElementById('welcomeVideoUploadBtn');
+        const welcomeVideoResult = document.getElementById('welcomeVideoResult');
+        const welcomeVideoPreview = document.getElementById('welcomeVideoPreview');
+        const welcomeVideoPlayer = document.getElementById('welcomeVideoPlayer');
         const menuImageForm = document.getElementById('menuImageForm');
         const menuImageInput = document.getElementById('menuImageInput');
         const menuImageFile = document.getElementById('menuImageFile');
@@ -1221,6 +1389,16 @@
             previewEl.style.display = 'none';
         }
 
+        function setVideoPreview(videoEl, previewEl, url) {
+            if (url) {
+                videoEl.src = url;
+                videoEl.load();
+                previewEl.style.display = 'block';
+                return;
+            }
+            previewEl.style.display = 'none';
+        }
+
         async function loadPromoImage() {
             if (!promoImageInput) return;
             try {
@@ -1236,6 +1414,21 @@
             }
         }
 
+        async function loadPromoVideo() {
+            if (!promoVideoInput) return;
+            try {
+                const res = await fetch('/settings/promo-video');
+                if (res.status === 401) return;
+                const data = await res.json();
+                const previewUrl = (data.url || '').trim();
+                const rawValue = (data.value || '').trim();
+                promoVideoInput.value = isHttpUrl(rawValue) ? rawValue : '';
+                setVideoPreview(promoVideoPlayer, promoVideoPreview, previewUrl);
+            } catch (e) {
+                promoVideoResult.textContent = 'Error loading promo video.';
+            }
+        }
+
         async function loadWelcomeImage() {
             if (!welcomeImageInput) return;
             try {
@@ -1248,6 +1441,21 @@
                 setImagePreview(welcomeImageImg, welcomeImagePreview, previewUrl);
             } catch (e) {
                 welcomeImageResult.textContent = 'Error loading welcome image.';
+            }
+        }
+
+        async function loadWelcomeVideo() {
+            if (!welcomeVideoInput) return;
+            try {
+                const res = await fetch('/settings/welcome-video');
+                if (res.status === 401) return;
+                const data = await res.json();
+                const previewUrl = (data.url || '').trim();
+                const rawValue = (data.value || '').trim();
+                welcomeVideoInput.value = isHttpUrl(rawValue) ? rawValue : '';
+                setVideoPreview(welcomeVideoPlayer, welcomeVideoPreview, previewUrl);
+            } catch (e) {
+                welcomeVideoResult.textContent = 'Error loading welcome video.';
             }
         }
 
@@ -1332,6 +1540,72 @@
         }
         loadPromoImage();
 
+        if (promoVideoInput) {
+            promoVideoInput.addEventListener('input', function() {
+                const url = promoVideoInput.value.trim();
+                setVideoPreview(promoVideoPlayer, promoVideoPreview, url);
+            });
+        }
+
+        if (promoVideoUploadBtn) {
+            promoVideoUploadBtn.onclick = async function() {
+                const file = promoVideoFile && promoVideoFile.files ? promoVideoFile.files[0] : null;
+                if (!file) {
+                    promoVideoResult.textContent = 'Please choose a promo video file first.';
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/settings/promo-video/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    promoVideoResult.textContent = 'Promo video uploaded.';
+                    promoVideoInput.value = '';
+                    if (promoVideoFile) {
+                        promoVideoFile.value = '';
+                    }
+                    setVideoPreview(promoVideoPlayer, promoVideoPreview, data.url || '');
+                } else {
+                    promoVideoResult.textContent = data.detail || data.error || 'Error uploading promo video.';
+                }
+            };
+        }
+
+        if (promoVideoForm) {
+            promoVideoForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const url = promoVideoInput.value.trim();
+                const res = await fetch('/settings/promo-video', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ url })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    promoVideoResult.textContent = 'Promo video saved.';
+                    promoVideoInput.value = data.value || url;
+                    setVideoPreview(promoVideoPlayer, promoVideoPreview, data.url || '');
+                } else {
+                    promoVideoResult.textContent = data.detail || data.error || 'Error saving promo video.';
+                }
+            };
+        }
+        loadPromoVideo();
+
         if (welcomeImageInput) {
             welcomeImageInput.addEventListener('input', function() {
                 const url = welcomeImageInput.value.trim();
@@ -1397,6 +1671,72 @@
             };
         }
         loadWelcomeImage();
+
+        if (welcomeVideoInput) {
+            welcomeVideoInput.addEventListener('input', function() {
+                const url = welcomeVideoInput.value.trim();
+                setVideoPreview(welcomeVideoPlayer, welcomeVideoPreview, url);
+            });
+        }
+
+        if (welcomeVideoUploadBtn) {
+            welcomeVideoUploadBtn.onclick = async function() {
+                const file = welcomeVideoFile && welcomeVideoFile.files ? welcomeVideoFile.files[0] : null;
+                if (!file) {
+                    welcomeVideoResult.textContent = 'Please choose a welcome video file first.';
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/settings/welcome-video/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
+                    body: formData
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    welcomeVideoResult.textContent = 'Welcome video uploaded.';
+                    welcomeVideoInput.value = '';
+                    if (welcomeVideoFile) {
+                        welcomeVideoFile.value = '';
+                    }
+                    setVideoPreview(welcomeVideoPlayer, welcomeVideoPreview, data.url || '');
+                } else {
+                    welcomeVideoResult.textContent = data.detail || data.error || 'Error uploading welcome video.';
+                }
+            };
+        }
+
+        if (welcomeVideoForm) {
+            welcomeVideoForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const url = welcomeVideoInput.value.trim();
+                const res = await fetch('/settings/welcome-video', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ url })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    welcomeVideoResult.textContent = 'Welcome video saved.';
+                    welcomeVideoInput.value = data.value || url;
+                    setVideoPreview(welcomeVideoPlayer, welcomeVideoPreview, data.url || '');
+                } else {
+                    welcomeVideoResult.textContent = data.detail || data.error || 'Error saving welcome video.';
+                }
+            };
+        }
+        loadWelcomeVideo();
 
         if (menuImageInput) {
             menuImageInput.addEventListener('input', function() {
@@ -1932,6 +2272,171 @@
             return dt.toLocaleString();
         }
 
+        function toLocalInputValue(value) {
+            if (!value) return '';
+            const dt = new Date(value);
+            if (Number.isNaN(dt.getTime())) return '';
+            const pad = (v) => String(v).padStart(2, '0');
+            return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+        }
+
+        function formatFileSummary(files) {
+            if (!files || files.length === 0) return '0';
+            const names = files.map(f => f.name).slice(0, 3);
+            const extra = files.length > 3 ? ` +${files.length - 3} more` : '';
+            return `${files.length} file(s): ${names.join(', ')}${extra}`;
+        }
+
+        function openRescheduleModal(item) {
+            activeScheduleId = item.id;
+            if (rescheduleIdLabel) {
+                rescheduleIdLabel.textContent = `#${item.id}`;
+            }
+            if (rescheduleCurrentTime) {
+                rescheduleCurrentTime.textContent = toLocalTimeLabel(item.run_at_utc);
+            }
+            if (rescheduleTargets) {
+                rescheduleTargets.textContent = String(item.total_users || 0);
+            }
+            if (rescheduleRunAtInput) {
+                rescheduleRunAtInput.value = toLocalInputValue(item.run_at_utc);
+            }
+            if (rescheduleUpdateRecipients) {
+                rescheduleUpdateRecipients.checked = false;
+            }
+            if (rescheduleResult) {
+                rescheduleResult.textContent = '';
+                rescheduleResult.style.color = '#166534';
+            }
+            rescheduleModal.show();
+        }
+
+        function stopBroadcastProgress() {
+            if (broadcastProgressTimer) {
+                clearTimeout(broadcastProgressTimer);
+                broadcastProgressTimer = null;
+            }
+        }
+
+        function startBroadcastProgress(scheduleId, totalRecipients) {
+            stopBroadcastProgress();
+            const resultEl = document.getElementById('result');
+            const poll = async () => {
+                try {
+                    const res = await fetch(`/send/schedule/${scheduleId}`);
+                    if (!res.ok) {
+                        broadcastProgressTimer = setTimeout(poll, 2000);
+                        return;
+                    }
+                    const data = await res.json();
+                    const sentCount = data.sent_count || 0;
+                    const failedCount = data.failed_count || 0;
+                    const totalCount = totalRecipients || data.total_users || 0;
+                    const processed = Math.min(totalCount, sentCount + failedCount);
+                    const rawPercent = totalCount ? Math.round((processed / totalCount) * 100) : 0;
+                    const displayPercent = rawPercent >= 100 ? 100 : Math.floor(rawPercent / 10) * 10;
+                    if (sendMeta) {
+                        sendMeta.textContent = `Progress: ${displayPercent}% (${processed}/${totalCount})`;
+                    }
+                    if (rawPercent >= 100 || ['sent', 'failed', 'cancelled'].includes(data.status)) {
+                        stopBroadcastProgress();
+                        if (sendMeta) {
+                            if (failedCount === 0 && totalCount > 0) {
+                                sendMeta.textContent = 'Complete: 100% sent to all.';
+                            } else {
+                                sendMeta.textContent = `Complete: 100% processed. Sent ${sentCount}, failed ${failedCount}.`;
+                            }
+                        }
+                        if (resultEl) {
+                            if (failedCount === 0 && totalCount > 0) {
+                                resultEl.innerText = `Sent to ${sentCount} user(s).`;
+                            } else {
+                                resultEl.innerText = `Sent to ${sentCount}/${totalCount} user(s). Failed: ${failedCount}.`;
+                            }
+                        }
+                        loadScheduledJobs();
+                        toggleRetargetLoading(false);
+                        setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', false);
+                        return;
+                    }
+                } catch (err) {
+                    if (sendMeta) {
+                        sendMeta.textContent = `Progress check failed: ${err.message}`;
+                    }
+                }
+                broadcastProgressTimer = setTimeout(poll, 2000);
+            };
+            poll();
+        }
+
+        async function openBroadcastConfirm(mode) {
+            const resultEl = document.getElementById('result');
+            const recipients = await resolveRecipients();
+            if (!recipients.ok) {
+                if (resultEl) {
+                    resultEl.innerText = recipients.error;
+                }
+                return;
+            }
+            const message = unifiedMessage.value || '';
+            const imageFiles = collectFiles(imageInputs);
+            const videoFiles = collectFiles(videoInputs);
+            if (!message.trim() && imageFiles.length === 0 && videoFiles.length === 0) {
+                if (resultEl) {
+                    resultEl.innerText = 'Please provide at least a message, image, or video.';
+                }
+                return;
+            }
+            const isAll = unifiedAllUsers.checked;
+            if (broadcastConfirmRecipients) {
+                broadcastConfirmRecipients.textContent = isAll
+                    ? `All Users (${recipients.user_ids.length})`
+                    : `${recipients.user_ids.length} Selected`;
+            }
+            if (broadcastConfirmMessage) {
+                broadcastConfirmMessage.textContent = message.trim() ? truncateText(message, 260) : '—';
+            }
+            if (broadcastConfirmImages) {
+                broadcastConfirmImages.textContent = formatFileSummary(imageFiles);
+            }
+            if (broadcastConfirmVideos) {
+                broadcastConfirmVideos.textContent = formatFileSummary(videoFiles);
+            }
+            if (mode === 'schedule') {
+                const runAtLocal = (scheduleAtInput && scheduleAtInput.value) ? scheduleAtInput.value : '';
+                if (!runAtLocal) {
+                    setScheduleMessage('Please select schedule time.', true);
+                    return;
+                }
+                if (broadcastConfirmScheduleRow) {
+                    broadcastConfirmScheduleRow.style.display = '';
+                }
+                if (broadcastConfirmSchedule) {
+                    const runAtDate = new Date(runAtLocal);
+                    broadcastConfirmSchedule.textContent = Number.isNaN(runAtDate.getTime()) ? runAtLocal : runAtDate.toLocaleString();
+                }
+                if (broadcastConfirmTitle) {
+                    broadcastConfirmTitle.textContent = 'Confirm Scheduled Broadcast';
+                }
+                if (broadcastConfirmSendBtn) {
+                    broadcastConfirmSendBtn.textContent = 'Schedule';
+                }
+            } else {
+                if (broadcastConfirmScheduleRow) {
+                    broadcastConfirmScheduleRow.style.display = 'none';
+                }
+                if (broadcastConfirmTitle) {
+                    broadcastConfirmTitle.textContent = 'Confirm Broadcast';
+                }
+                if (broadcastConfirmSendBtn) {
+                    broadcastConfirmSendBtn.textContent = 'Send';
+                }
+            }
+            pendingBroadcastMode = mode;
+            pendingBroadcastRecipients = recipients;
+            broadcastConfirmModal.show();
+        }
+
         async function loadScheduledJobs() {
             if (!scheduledTableBody) return;
             scheduledTableBody.innerHTML = '';
@@ -1947,7 +2452,7 @@
                 if (items.length === 0) {
                     const tr = document.createElement('tr');
                     const td = document.createElement('td');
-                    td.colSpan = 7;
+                    td.colSpan = 8;
                     td.textContent = 'No scheduled broadcasts.';
                     td.style.textAlign = 'center';
                     tr.appendChild(td);
@@ -1966,6 +2471,12 @@
                     tdTargets.textContent = String(item.total_users || 0);
                     const tdCounts = document.createElement('td');
                     tdCounts.textContent = `${item.sent_count || 0}/${item.failed_count || 0}`;
+                    const tdProgress = document.createElement('td');
+                    const progressPercent = typeof item.progress_percent === 'number' ? item.progress_percent : 0;
+                    const processedCount = (item.sent_count || 0) + (item.failed_count || 0);
+                    const totalCount = item.total_users || 0;
+                    tdProgress.textContent = `${Math.min(100, Math.max(0, progressPercent))}%`;
+                    tdProgress.title = `${processedCount}/${totalCount}`;
                     const tdMsg = document.createElement('td');
                     tdMsg.textContent = item.message || '';
                     tdMsg.style.maxWidth = '260px';
@@ -1975,6 +2486,14 @@
                     }
                     const tdAction = document.createElement('td');
                     if (item.can_cancel) {
+                        const actionWrap = document.createElement('div');
+                        actionWrap.className = 'd-flex flex-wrap gap-2';
+                        const rescheduleBtn = document.createElement('button');
+                        rescheduleBtn.type = 'button';
+                        rescheduleBtn.className = 'btn btn-sm btn-outline-primary';
+                        rescheduleBtn.textContent = 'Reschedule';
+                        rescheduleBtn.onclick = () => openRescheduleModal(item);
+                        actionWrap.appendChild(rescheduleBtn);
                         const cancelBtn = document.createElement('button');
                         cancelBtn.type = 'button';
                         cancelBtn.className = 'btn btn-sm btn-outline-danger';
@@ -1998,7 +2517,8 @@
                             }
                             loadScheduledJobs();
                         };
-                        tdAction.appendChild(cancelBtn);
+                        actionWrap.appendChild(cancelBtn);
+                        tdAction.appendChild(actionWrap);
                     } else if (item.can_delete) {
                         const removeBtn = document.createElement('button');
                         removeBtn.type = 'button';
@@ -2032,6 +2552,7 @@
                     tr.appendChild(tdStatus);
                     tr.appendChild(tdTargets);
                     tr.appendChild(tdCounts);
+                    tr.appendChild(tdProgress);
                     tr.appendChild(tdMsg);
                     tr.appendChild(tdAction);
                     scheduledTableBody.appendChild(tr);
@@ -2041,12 +2562,15 @@
             }
         }
 
-        async function submitBroadcastNow() {
+        async function submitBroadcastNow(recipients) {
             const resultEl = document.getElementById('result');
-            const recipients = await resolveRecipients();
-            if (!recipients.ok) {
-                resultEl.innerText = recipients.error;
-                return;
+            let resolved = recipients;
+            if (!resolved) {
+                resolved = await resolveRecipients();
+                if (!resolved.ok) {
+                    resultEl.innerText = resolved.error;
+                    return;
+                }
             }
             const message = unifiedMessage.value;
             const imageFiles = collectFiles(imageInputs);
@@ -2057,58 +2581,57 @@
             }
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('user_ids', recipients.user_ids.join(','));
+            formData.append('user_ids', resolved.user_ids.join(','));
             imageFiles.forEach(file => formData.append('images', file));
             videoFiles.forEach(file => formData.append('videos', file));
 
-            const startedAt = Date.now();
-            const totalRecipients = recipients.user_ids.length;
+            const totalRecipients = resolved.user_ids.length;
             resultEl.innerText = '';
             if (sendMeta) {
-                sendMeta.textContent = `Sending to ${totalRecipients} user(s)...`;
+                sendMeta.textContent = `Queued ${totalRecipients} user(s)...`;
             }
             setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', true);
             toggleRetargetLoading(true);
             try {
-                const res = await fetch('/send/all/bulk', {
+                const res = await fetch('/send/all/bulk/async', {
                     method: 'POST',
                     headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
                 const result = await res.json();
-                const failedCount = Array.isArray(result.failed) ? result.failed.length : 0;
                 if (res.ok && result.success) {
-                    const sentCount = Array.isArray(result.sent) ? result.sent.length : 0;
-                    if (failedCount > 0) {
-                        resultEl.innerText = `Sent to ${sentCount}/${totalRecipients} user(s). Failed: ${failedCount}.`;
-                    } else {
-                        resultEl.innerText = `Sent to ${sentCount} user(s).`;
-                    }
+                    resultEl.innerText = `Broadcast queued (#${result.schedule_id}).`;
                     if (sendMeta) {
-                        sendMeta.textContent = `Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+                        sendMeta.textContent = 'Progress: 0% (0/' + totalRecipients + ')';
                     }
+                    loadScheduledJobs();
+                    startBroadcastProgress(result.schedule_id, totalRecipients);
                 } else {
                     resultEl.innerText = result.detail || result.error || 'Broadcast failed.';
                     if (sendMeta) {
                         sendMeta.textContent = '';
                     }
+                    setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', false);
+                    toggleRetargetLoading(false);
                 }
             } catch (err) {
                 resultEl.innerText = `Broadcast failed: ${err.message}`;
                 if (sendMeta) {
                     sendMeta.textContent = '';
                 }
-            } finally {
                 setButtonLoading(unifiedSendBtn, 'Sending...', 'Send Broadcast', false);
                 toggleRetargetLoading(false);
             }
         }
 
-        async function createScheduledBroadcast() {
-            const recipients = await resolveRecipients();
-            if (!recipients.ok) {
-                setScheduleMessage(recipients.error, true);
-                return;
+        async function createScheduledBroadcast(recipients) {
+            let resolved = recipients;
+            if (!resolved) {
+                resolved = await resolveRecipients();
+                if (!resolved.ok) {
+                    setScheduleMessage(resolved.error, true);
+                    return;
+                }
             }
             const runAtLocal = (scheduleAtInput && scheduleAtInput.value) ? scheduleAtInput.value : '';
             if (!runAtLocal) {
@@ -2131,7 +2654,7 @@
 
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('user_ids', recipients.user_ids.join(','));
+            formData.append('user_ids', resolved.user_ids.join(','));
             formData.append('run_at', runAtIso);
             imageFiles.forEach(file => formData.append('images', file));
             videoFiles.forEach(file => formData.append('videos', file));
@@ -2165,11 +2688,23 @@
 
         document.getElementById('unifiedForm').onsubmit = async function(e) {
             e.preventDefault();
-            await submitBroadcastNow();
+            await openBroadcastConfirm('now');
         };
         if (scheduleSendBtn) {
             scheduleSendBtn.onclick = async function() {
-                await createScheduledBroadcast();
+                await openBroadcastConfirm('schedule');
+            };
+        }
+        if (broadcastConfirmSendBtn) {
+            broadcastConfirmSendBtn.onclick = async function() {
+                broadcastConfirmModal.hide();
+                if (pendingBroadcastMode === 'schedule') {
+                    await createScheduledBroadcast(pendingBroadcastRecipients);
+                } else {
+                    await submitBroadcastNow(pendingBroadcastRecipients);
+                }
+                pendingBroadcastMode = '';
+                pendingBroadcastRecipients = null;
             };
         }
         if (refreshSchedulesBtn) {
@@ -2178,6 +2713,71 @@
             };
         }
         loadScheduledJobs();
+
+        if (rescheduleSaveBtn) {
+            rescheduleSaveBtn.onclick = async function() {
+                if (!activeScheduleId) return;
+                const runAtLocal = (rescheduleRunAtInput && rescheduleRunAtInput.value) ? rescheduleRunAtInput.value : '';
+                if (!runAtLocal) {
+                    if (rescheduleResult) {
+                        rescheduleResult.textContent = 'Please select schedule time.';
+                        rescheduleResult.style.color = '#b91c1c';
+                    }
+                    return;
+                }
+                const runAtDate = new Date(runAtLocal);
+                if (Number.isNaN(runAtDate.getTime())) {
+                    if (rescheduleResult) {
+                        rescheduleResult.textContent = 'Invalid schedule time.';
+                        rescheduleResult.style.color = '#b91c1c';
+                    }
+                    return;
+                }
+                const payload = { run_at: runAtDate.toISOString() };
+                if (rescheduleUpdateRecipients && rescheduleUpdateRecipients.checked) {
+                    const recipients = await resolveRecipients();
+                    if (!recipients.ok) {
+                        if (rescheduleResult) {
+                            rescheduleResult.textContent = recipients.error;
+                            rescheduleResult.style.color = '#b91c1c';
+                        }
+                        return;
+                    }
+                    payload.user_ids = recipients.user_ids;
+                }
+                rescheduleSaveBtn.disabled = true;
+                rescheduleSaveBtn.textContent = 'Saving...';
+                try {
+                    const res = await fetch(`/send/schedule/${activeScheduleId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        if (rescheduleResult) {
+                            rescheduleResult.textContent = data.detail || data.error || 'Failed to update schedule.';
+                            rescheduleResult.style.color = '#b91c1c';
+                        }
+                    } else {
+                        if (rescheduleResult) {
+                            rescheduleResult.textContent = `Schedule #${activeScheduleId} updated.`;
+                            rescheduleResult.style.color = '#166534';
+                        }
+                        rescheduleModal.hide();
+                        loadScheduledJobs();
+                    }
+                } catch (err) {
+                    if (rescheduleResult) {
+                        rescheduleResult.textContent = `Failed to update schedule: ${err.message}`;
+                        rescheduleResult.style.color = '#b91c1c';
+                    }
+                } finally {
+                    rescheduleSaveBtn.disabled = false;
+                    rescheduleSaveBtn.textContent = 'Save Changes';
+                }
+            };
+        }
 
         // ================= USER LIMITS MANAGER =================
         function getUsernameById(tid) {

@@ -576,11 +576,11 @@ def build_absolute_backend_url(base_url: str, value: str) -> str:
         return f"https:{raw}"
     return f"{base_url.rstrip('/')}/{raw.lstrip('/')}"
 
-def resolve_backend_image_ref(base_url: str, payload: dict) -> str:
+def resolve_backend_media_ref(base_url: str, payload: dict) -> str:
     raw_value = (payload.get("value") or "").strip()
     preview_url = (payload.get("url") or "").strip()
 
-    local_path = parse_local_image_ref(raw_value)
+    local_path = parse_local_media_ref(raw_value)
     if local_path:
         if os.path.isfile(local_path):
             return raw_value
@@ -595,6 +595,9 @@ def resolve_backend_image_ref(base_url: str, payload: dict) -> str:
         return build_absolute_backend_url(base_url, preview_url)
     return ""
 
+def resolve_backend_image_ref(base_url: str, payload: dict) -> str:
+    return resolve_backend_media_ref(base_url, payload)
+
 def fetch_promo_image_url():
     """Fetch promo image URL from backend settings."""
     for base_url in iter_backend_urls():
@@ -602,7 +605,7 @@ def fetch_promo_image_url():
             res = requests.get(f"{base_url}/settings/promo-image", timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                image_ref = resolve_backend_image_ref(base_url, data)
+                image_ref = resolve_backend_media_ref(base_url, data)
                 if image_ref:
                     return image_ref
         except Exception:
@@ -616,7 +619,7 @@ def fetch_welcome_image_url():
             res = requests.get(f"{base_url}/settings/welcome-image", timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                image_ref = resolve_backend_image_ref(base_url, data)
+                image_ref = resolve_backend_media_ref(base_url, data)
                 if image_ref:
                     return image_ref
         except Exception:
@@ -630,15 +633,43 @@ def fetch_menu_image_url():
             res = requests.get(f"{base_url}/settings/menu-image", timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                image_ref = resolve_backend_image_ref(base_url, data)
+                image_ref = resolve_backend_media_ref(base_url, data)
                 if image_ref:
                     return image_ref
         except Exception:
             continue
     return ""
 
-def parse_local_image_ref(image_ref: str):
-    raw = (image_ref or "").strip()
+def fetch_promo_video_url():
+    """Fetch promo video URL from backend settings."""
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/promo-video", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                media_ref = resolve_backend_media_ref(base_url, data)
+                if media_ref:
+                    return media_ref
+        except Exception:
+            continue
+    return ""
+
+def fetch_welcome_video_url():
+    """Fetch welcome video URL from backend settings."""
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/welcome-video", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                media_ref = resolve_backend_media_ref(base_url, data)
+                if media_ref:
+                    return media_ref
+        except Exception:
+            continue
+    return ""
+
+def parse_local_media_ref(media_ref: str):
+    raw = (media_ref or "").strip()
     if not raw.lower().startswith("local:"):
         return None
     path = raw[6:].strip()
@@ -646,8 +677,11 @@ def parse_local_image_ref(image_ref: str):
         return None
     return os.path.abspath(path)
 
+def parse_local_image_ref(image_ref: str):
+    return parse_local_media_ref(image_ref)
+
 async def send_image_reply(message, image_ref: str, caption: str, reply_markup=None) -> bool:
-    local_path = parse_local_image_ref(image_ref)
+    local_path = parse_local_media_ref(image_ref)
     try:
         if local_path:
             if not os.path.isfile(local_path):
@@ -660,6 +694,22 @@ async def send_image_reply(message, image_ref: str, caption: str, reply_markup=N
         return True
     except Exception as e:
         logging.warning(f"Failed to send image reply: {e}")
+        return False
+
+async def send_video_reply(message, video_ref: str, caption: str, reply_markup=None) -> bool:
+    local_path = parse_local_media_ref(video_ref)
+    try:
+        if local_path:
+            if not os.path.isfile(local_path):
+                logging.warning(f"Local video file not found: {local_path}")
+                return False
+            with open(local_path, "rb") as video_file:
+                await message.reply_video(video=video_file, caption=caption, reply_markup=reply_markup)
+            return True
+        await message.reply_video(video=video_ref, caption=caption, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        logging.warning(f"Failed to send video reply: {e}")
         return False
 
 
@@ -1618,8 +1668,18 @@ async def start(update, context):
 
     # --- 1st message: Promo image + promo text ---
     promo_image_url = fetch_promo_image_url()
+    promo_video_url = fetch_promo_video_url()
     welcome_image_url = fetch_welcome_image_url() or promo_image_url
-    if promo_image_url:
+    welcome_video_url = fetch_welcome_video_url()
+    if promo_video_url:
+        sent = await send_video_reply(update.message, promo_video_url, first_message_text)
+        if not sent:
+            if promo_image_url:
+                if not await send_image_reply(update.message, promo_image_url, first_message_text):
+                    await update.message.reply_text(first_message_text)
+            else:
+                await update.message.reply_text(first_message_text)
+    elif promo_image_url:
         sent = await send_image_reply(update.message, promo_image_url, first_message_text)
         if not sent:
             await update.message.reply_text(first_message_text)
@@ -1627,6 +1687,15 @@ async def start(update, context):
         await update.message.reply_text(first_message_text)
 
     # --- 2nd message: Welcome message + menu buttons (with image when available) ---
+    if welcome_video_url:
+        sent = await send_video_reply(
+            update.message,
+            welcome_video_url,
+            second_message_text,
+            reply_markup=start_menu_keyboard(),
+        )
+        if sent:
+            return
     if welcome_image_url:
         sent = await send_image_reply(
             update.message,
