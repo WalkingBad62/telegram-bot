@@ -33,6 +33,12 @@ USAGE_DB_PATH = os.path.join(BASE_DIR, "bot_usage.db")
 FEATURE_USAGE_LIMIT_DEFAULT = int(os.getenv("FEATURE_USAGE_LIMIT", "3") or "3")
 if FEATURE_USAGE_LIMIT_DEFAULT < 1:
     FEATURE_USAGE_LIMIT_DEFAULT = 3
+try:
+    FUTURESIGNAL_DEFAULT_LIMIT = int(os.getenv("FUTURESIGNAL_DEFAULT_LIMIT", "0") or "0")
+except ValueError:
+    FUTURESIGNAL_DEFAULT_LIMIT = 0
+if FUTURESIGNAL_DEFAULT_LIMIT < 0:
+    FUTURESIGNAL_DEFAULT_LIMIT = 0
 FEATURE_LIMIT_SCOPE_ALL = "__all__"
 FEATURE_LABELS = {
     "future_signal": "Future Signal",
@@ -40,6 +46,11 @@ FEATURE_LABELS = {
     FEATURE_LIMIT_SCOPE_ALL: "All Features",
 }
 VALID_LIMIT_FEATURES = {"future_signal", "yooai", FEATURE_LIMIT_SCOPE_ALL}
+FEATURE_DEFAULT_LIMITS = {
+    "future_signal": FUTURESIGNAL_DEFAULT_LIMIT,
+    "yooai": FEATURE_USAGE_LIMIT_DEFAULT,
+    FEATURE_LIMIT_SCOPE_ALL: FEATURE_USAGE_LIMIT_DEFAULT,
+}
 BOT_MODE = (os.getenv("BOT_MODE", "currency") or "currency").strip().lower()
 if BOT_MODE not in ("currency", "trading"):
     BOT_MODE = "currency"
@@ -2933,13 +2944,19 @@ async def list_user_limits(request: Request):
     """List all custom user limits, optionally filtered by telegram_id."""
     require_login(request)
     telegram_id = request.query_params.get("telegram_id", "").strip()
+    default_limits = {k: v for k, v in FEATURE_DEFAULT_LIMITS.items()}
     with sqlite3.connect(USAGE_DB_PATH) as conn:
         c = conn.cursor()
         if telegram_id:
             try:
                 tid = int(telegram_id)
             except ValueError:
-                return {"limits": [], "default_limit": FEATURE_USAGE_LIMIT_DEFAULT}
+                return {
+                    "limits": [],
+                    "default_limit": FEATURE_USAGE_LIMIT_DEFAULT,
+                    "default_limits": default_limits,
+                    "features": {k: v for k, v in FEATURE_LABELS.items()},
+                }
             c.execute(
                 "SELECT telegram_id, feature, daily_limit, updated_at FROM feature_user_limits WHERE telegram_id = ? ORDER BY feature",
                 (tid,),
@@ -2958,7 +2975,12 @@ async def list_user_limits(request: Request):
             "daily_limit": row[2],
             "updated_at": row[3],
         })
-    return {"limits": limits, "default_limit": FEATURE_USAGE_LIMIT_DEFAULT, "features": {k: v for k, v in FEATURE_LABELS.items()}}
+    return {
+        "limits": limits,
+        "default_limit": FEATURE_USAGE_LIMIT_DEFAULT,
+        "default_limits": default_limits,
+        "features": {k: v for k, v in FEATURE_LABELS.items()},
+    }
 
 
 @app.post("/user-limits")
