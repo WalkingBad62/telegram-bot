@@ -3045,6 +3045,31 @@ async def delete_user_limit(telegram_id: int, feature: str, request: Request):
     return {"ok": True, "deleted": deleted}
 
 
+@app.post("/user-limits/clear-all")
+async def clear_all_limits(request: Request):
+    """Remove all custom limits for a specific feature."""
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    feature = (data.get("feature") or "").strip()
+    if feature not in VALID_LIMIT_FEATURES:
+        raise HTTPException(status_code=400, detail="Invalid feature")
+    with sqlite3.connect(USAGE_DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            "DELETE FROM feature_user_limits WHERE feature = ?",
+            (feature,),
+        )
+        deleted = c.rowcount or 0
+        conn.commit()
+    return {
+        "ok": True,
+        "deleted": int(deleted),
+        "feature": feature,
+        "feature_label": _feature_label(feature),
+    }
+
+
 # --- Serve Admin Panel (Protected) ---
 @app.get("/admin")
 def get_admin_panel(request: Request):

@@ -823,11 +823,24 @@
                     </thead>
                     <tbody></tbody>
                 </table>
-            </div>
-            <div id="limitDefaultInfo" class="muted mt-2" style="font-size:13px;"></div>
-        </div>
-    </div>
-    </div>
+              </div>
+              <div id="limitDefaultInfo" class="muted mt-2" style="font-size:13px;"></div>
+              <div class="mt-3 p-3 border rounded-3" style="border-color: rgba(239, 68, 68, 0.25);">
+                  <div style="font-weight:600; margin-bottom:6px;">Bulk Remove Limits</div>
+                  <div class="muted" style="font-size:12px; margin-bottom:10px;">
+                      Use this to force default lock for all users by removing existing custom limits.
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 align-items-center">
+                      <select id="limitBulkFeatureSelect" class="form-select" style="max-width:260px;">
+                          <option value="future_signal">Future Signal</option>
+                          <option value="__all__">All Features (global)</option>
+                      </select>
+                      <button type="button" id="limitBulkClearBtn" class="btn btn-danger btn-sm">Remove All</button>
+                  </div>
+              </div>
+          </div>
+      </div>
+      </div>
     <div class="modal fade" id="broadcastConfirmModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content confirm-modal">
@@ -2682,6 +2695,26 @@
             } else {
                 const d = await res.json();
                 showLimitMsg(d.detail || 'Error setting limit', true);
+            }
+        };
+
+        document.getElementById('limitBulkClearBtn').onclick = async () => {
+            const featureSel = document.getElementById('limitBulkFeatureSelect');
+            const feature = featureSel.value;
+            const label = featureSel.options[featureSel.selectedIndex].text;
+            if (!confirm(`Remove all custom limits for ${label}?`)) return;
+            const res = await fetch('/user-limits/clear-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ feature })
+            });
+            if (res.ok) {
+                const d = await res.json();
+                showLimitMsg(`Removed ${d.deleted} ${d.feature_label} limits. Default applies now.`, false);
+                loadLimits(document.getElementById('limitFilterUser').value);
+            } else {
+                const d = await res.json();
+                showLimitMsg(d.detail || 'Error removing limits', true);
             }
         };
     </script>
