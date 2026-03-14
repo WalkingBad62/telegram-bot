@@ -736,16 +736,25 @@
                 </div>
                 <div class="tag" style="background: rgba(37, 99, 235, 0.12); color: #1d4ed8;">Bot Flow</div>
             </div>
-            <form id="startMessageForm" class="form-section">
-                <div class="mb-3">
-                    <label class="form-label">/start reply</label>
-                    <textarea id="startMessageInput" class="form-control" rows="6" placeholder="Enter the /start message"></textarea>
-                    <div class="file-hint">Line breaks will be preserved.</div>
-                </div>
-                <button type="submit" class="btn btn-primary">Save Start Message</button>
-                <div id="startMessageResult" class="mt-2"></div>
-            </form>
-        </div>
+              <form id="startMessageForm" class="form-section">
+                  <div class="mb-3">
+                      <label class="form-label">/start reply</label>
+                      <textarea id="startMessageInput" class="form-control" rows="6" placeholder="Enter the /start message"></textarea>
+                      <div class="file-hint">Line breaks will be preserved.</div>
+                  </div>
+                  <button type="submit" class="btn btn-primary">Save Start Message</button>
+                  <div id="startMessageResult" class="mt-2"></div>
+              </form>
+              <form id="futureSignalLockMessageForm" class="form-section mt-4">
+                  <div class="mb-3">
+                      <label class="form-label">Future Signal Lock Message</label>
+                      <textarea id="futureSignalLockMessageInput" class="form-control" rows="4" placeholder="Message shown when Future Signal is locked"></textarea>
+                      <div class="file-hint">This message appears when a user clicks Future Signal without access.</div>
+                  </div>
+                  <button type="submit" class="btn btn-primary">Save Lock Message</button>
+                  <div id="futureSignalLockMessageResult" class="mt-2"></div>
+              </form>
+          </div>
         <div class="panel-card mt-4">
             <div class="section-header">
                 <div>
@@ -932,6 +941,9 @@
         const startMessageInput = document.getElementById('startMessageInput');
         const startMessageResult = document.getElementById('startMessageResult');
         const startMessageForm = document.getElementById('startMessageForm');
+        const futureSignalLockMessageForm = document.getElementById('futureSignalLockMessageForm');
+        const futureSignalLockMessageInput = document.getElementById('futureSignalLockMessageInput');
+        const futureSignalLockMessageResult = document.getElementById('futureSignalLockMessageResult');
         const scheduledTableBody = document.getElementById('scheduledTableBody');
         const broadcastConfirmModal = new bootstrap.Modal(document.getElementById('broadcastConfirmModal'));
         const broadcastConfirmTitle = document.getElementById('broadcastConfirmTitle');
@@ -1049,6 +1061,24 @@
                 startMessageInput.value = data.message || '';
             } catch (e) {
                 startMessageResult.textContent = 'Error loading start message.';
+            }
+        }
+
+        async function loadFutureSignalLockMessage() {
+            if (!futureSignalLockMessageInput) {
+                return;
+            }
+            try {
+                const res = await fetch('/settings/future-signal-lock-message');
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                futureSignalLockMessageInput.value = data.message || '';
+            } catch (e) {
+                futureSignalLockMessageResult.textContent = 'Error loading lock message.';
             }
         }
 
@@ -1545,7 +1575,35 @@
                 }
             };
         }
+        if (futureSignalLockMessageForm) {
+            futureSignalLockMessageForm.onsubmit = async function(e) {
+                e.preventDefault();
+                const message = futureSignalLockMessageInput.value || '';
+                if (!message.trim()) {
+                    futureSignalLockMessageResult.textContent = 'Message is required.';
+                    return;
+                }
+                const res = await fetch('/settings/future-signal-lock-message', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ message })
+                });
+                if (res.status === 401) {
+                    document.getElementById('authError').innerText = 'Session expired. Please log in again.';
+                    setTimeout(() => window.location.href = '/admin/login', 1500);
+                    return;
+                }
+                const data = await res.json();
+                if (res.ok) {
+                    futureSignalLockMessageResult.textContent = 'Lock message saved.';
+                    futureSignalLockMessageInput.value = data.message || message;
+                } else {
+                    futureSignalLockMessageResult.textContent = data.detail || data.error || 'Error saving lock message.';
+                }
+            };
+        }
         loadStartMessage();
+        loadFutureSignalLockMessage();
         document.getElementById('logoutBtn').onclick = function() {
             fetch('/admin/logout').then(() => {
                 window.location.href = '/admin/login';

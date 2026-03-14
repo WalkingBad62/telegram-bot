@@ -256,6 +256,15 @@ def _build_usage_after_consume_message(feature: str, remaining: int, reset_ts: i
     )
 
 
+def _build_premium_locked_message(feature: str) -> str:
+    if feature == FEATURE_FUTURESIGNAL:
+        return fetch_future_signal_lock_message()
+    return (
+        f"{_feature_label(feature)} is a premium feature.\n"
+        "Please contact admin to unlock access."
+    )
+
+
 def _resolve_feature_limit(cursor: sqlite3.Cursor, telegram_id: int, feature: str) -> int:
     cursor.execute(
         """
@@ -275,6 +284,8 @@ def _resolve_feature_limit(cursor: sqlite3.Cursor, telegram_id: int, feature: st
                 return custom_limit
         except (TypeError, ValueError):
             pass
+    if feature == FEATURE_FUTURESIGNAL:
+        return 0
     return FEATURE_USAGE_LIMIT
 
 
@@ -351,6 +362,9 @@ def get_feature_remaining(telegram_id: int, feature: str) -> tuple[int, int | No
         c = conn.cursor()
         c.execute("DELETE FROM feature_usage WHERE used_at < ?", (cleanup_before,))
         limit = _resolve_feature_limit(c, telegram_id, feature)
+        if feature == FEATURE_FUTURESIGNAL and limit <= 0:
+            conn.commit()
+            return 0, None, limit
         c.execute(
             """
             SELECT COUNT(*), MIN(used_at)
@@ -375,6 +389,9 @@ def consume_feature_usage(telegram_id: int, username: str, feature: str) -> tupl
         c = conn.cursor()
         c.execute("DELETE FROM feature_usage WHERE used_at < ?", (cleanup_before,))
         limit = _resolve_feature_limit(c, telegram_id, feature)
+        if feature == FEATURE_FUTURESIGNAL and limit <= 0:
+            conn.commit()
+            return False, 0, None, limit
         c.execute(
             """
             SELECT COUNT(*), MIN(used_at)
@@ -553,6 +570,11 @@ def build_default_start_message(mode: str) -> str:
     )
 
 DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
+DEFAULT_FUTURE_SIGNAL_LOCK_MESSAGE = (
+    "Future Signal is a premium feature.\n"
+    "Please contact admin to unlock access.\n"
+    "Admin can set your access from the admin panel."
+)
 
 def fetch_start_message():
     try:
@@ -564,6 +586,17 @@ def fetch_start_message():
     except Exception:
         pass
     return DEFAULT_START_MESSAGE
+
+def fetch_future_signal_lock_message():
+    try:
+        res = requests.get(f"{BACKEND_URL}/settings/future-signal-lock-message", timeout=5)
+        if res.status_code == 200:
+            msg = res.json().get("message")
+            if msg:
+                return msg
+    except Exception:
+        pass
+    return DEFAULT_FUTURE_SIGNAL_LOCK_MESSAGE
 
 def build_absolute_backend_url(base_url: str, value: str) -> str:
     raw = (value or "").strip()
@@ -1751,6 +1784,9 @@ async def start_menu_callback(update, context):
 
     if data == CB_START_FUTURE_SIGNAL:
         remaining, reset_ts, limit = get_feature_remaining(user_id, FEATURE_FUTURESIGNAL)
+        if limit <= 0:
+            await query.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+            return
         if remaining <= 0:
             await query.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
             return
@@ -1790,6 +1826,18 @@ async def futuresignal_callback(update, context):
     data = query.data or ""
 
     if data.startswith(CB_FUTURESIGNAL_PAIR_PREFIX):
+        remaining, reset_ts, limit = get_feature_remaining(
+            query.from_user.id if query.from_user else 0,
+            FEATURE_FUTURESIGNAL,
+        )
+        if limit <= 0:
+            if query.message:
+                await query.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+            return
+        if remaining <= 0:
+            if query.message:
+                await query.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
+            return
         raw_pair = data[len(CB_FUTURESIGNAL_PAIR_PREFIX):].strip().upper()
         choices, display, valid = fetch_signal_pairs()
         context.user_data["_pair_choices"] = choices
@@ -1835,7 +1883,10 @@ async def futuresignal_callback(update, context):
         if not allowed:
             await query.answer("Daily limit reached", show_alert=True)
             if query.message:
-                await query.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
+                if limit <= 0:
+                    await query.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+                else:
+                    await query.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
             return
         await query.answer()
         if query.message:
@@ -1937,6 +1988,9 @@ async def futuresignal(update, context):
     await store_user(update)
     user = update.message.from_user
     remaining, reset_ts, limit = get_feature_remaining(user.id, FEATURE_FUTURESIGNAL)
+    if limit <= 0:
+        await update.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+        return
     if remaining <= 0:
         await update.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
         return
@@ -2049,6 +2103,19 @@ async def normal_message(update, context):
 
     # --- Future Signal: pair selection ---
     if context.user_data.get(AWAIT_FUTURESIGNAL_PAIR_KEY):
+        remaining, reset_ts, limit = get_feature_remaining(update.message.from_user.id, FEATURE_FUTURESIGNAL)
+        if limit <= 0:
+            context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
+            context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
+            context.user_data.pop("futuresignal_pair", None)
+            await update.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+            return
+        if remaining <= 0:
+            context.user_data.pop(AWAIT_FUTURESIGNAL_PAIR_KEY, None)
+            context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
+            context.user_data.pop("futuresignal_pair", None)
+            await update.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
+            return
         raw = text.upper()
         choices = context.user_data.get("_pair_choices", CURRENCY_PAIR_CHOICES)
         display = context.user_data.get("_pair_display", CURRENCY_PAIR_DISPLAY)
@@ -2071,6 +2138,12 @@ async def normal_message(update, context):
 
     # --- Future Signal: timeframe selection ---
     if context.user_data.get(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY):
+        remaining, reset_ts, limit = get_feature_remaining(update.message.from_user.id, FEATURE_FUTURESIGNAL)
+        if limit <= 0:
+            context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
+            context.user_data.pop("futuresignal_pair", None)
+            await update.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+            return
         raw = text
         if raw in VALID_TIMEFRAMES:
             context.user_data.pop(AWAIT_FUTURESIGNAL_TIMEFRAME_KEY, None)
@@ -2084,7 +2157,10 @@ async def normal_message(update, context):
                 FEATURE_FUTURESIGNAL,
             )
             if not allowed:
-                await update.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
+                if limit <= 0:
+                    await update.message.reply_text(_build_premium_locked_message(FEATURE_FUTURESIGNAL))
+                else:
+                    await update.message.reply_text(_build_limit_block_message(FEATURE_FUTURESIGNAL, reset_ts, limit))
                 return
             await update.message.reply_text(_build_usage_after_consume_message(FEATURE_FUTURESIGNAL, remaining, reset_ts, limit))
             await send_futuresignal_result(update.message, pair, timeframe, display)

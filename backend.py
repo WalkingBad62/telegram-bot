@@ -128,6 +128,11 @@ def build_default_start_message(mode: str) -> str:
     )
 
 DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
+DEFAULT_FUTURE_SIGNAL_LOCK_MESSAGE = (
+    "Future Signal is a premium feature.\n"
+    "Please contact admin to unlock access.\n"
+    "Admin can set your access from the admin panel."
+)
 DEFAULT_CURRENCY_PAIRS = {
     "EURUSD": {"price": 1.19, "link": "http://currency.com/buy/EURUSD/"},
     "USDJPY": {"price": 150.25, "link": "http://currency.com/buy/USDJPY/"},
@@ -192,6 +197,9 @@ os.makedirs(SCHEDULE_MEDIA_UPLOAD_DIR, exist_ok=True)
 
 def start_message_setting_key() -> str:
     return f"start_message_{BOT_MODE}"
+
+def future_signal_lock_message_setting_key() -> str:
+    return f"future_signal_lock_message_{BOT_MODE}"
 
 def promo_image_setting_key() -> str:
     return f"promo_image_url_{BOT_MODE}"
@@ -450,6 +458,10 @@ def init_db():
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (start_message_setting_key(), DEFAULT_START_MESSAGE)
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (future_signal_lock_message_setting_key(), DEFAULT_FUTURE_SIGNAL_LOCK_MESSAGE)
         )
         c.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
@@ -810,6 +822,27 @@ async def update_start_message(request: Request):
         raise HTTPException(status_code=400, detail="Message is required.")
     raw_message = sanitize_start_message(raw_message)
     set_setting(start_message_setting_key(), raw_message)
+    return {"ok": True, "message": raw_message, "mode": BOT_MODE}
+
+# --- Future Signal lock message settings ---
+@app.get("/settings/future-signal-lock-message")
+def get_future_signal_lock_message():
+    message = get_setting(
+        future_signal_lock_message_setting_key(),
+        DEFAULT_FUTURE_SIGNAL_LOCK_MESSAGE,
+    )
+    return {"message": message, "mode": BOT_MODE}
+
+@app.put("/settings/future-signal-lock-message")
+async def update_future_signal_lock_message(request: Request):
+    require_login(request)
+    require_csrf(request)
+    data = await request.json()
+    raw_message = data.get("message")
+    if not isinstance(raw_message, str) or not raw_message.strip():
+        raise HTTPException(status_code=400, detail="Message is required.")
+    raw_message = raw_message.strip()
+    set_setting(future_signal_lock_message_setting_key(), raw_message)
     return {"ok": True, "message": raw_message, "mode": BOT_MODE}
 
 # --- Promo image settings ---
@@ -3021,7 +3054,6 @@ async def delete_user_limit(telegram_id: int, feature: str, request: Request):
         deleted = c.rowcount or 0
         conn.commit()
     return {"ok": True, "deleted": deleted}
-
 
 # --- Serve Admin Panel (Protected) ---
 @app.get("/admin")
