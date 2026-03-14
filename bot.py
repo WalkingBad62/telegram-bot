@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import textwrap
+import time
 import requests
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
@@ -45,6 +46,24 @@ except ValueError:
     YOOAI_LOADING_GIF_SECONDS = 1.0
 if YOOAI_LOADING_GIF_SECONDS < 0.2:
     YOOAI_LOADING_GIF_SECONDS = 0.2
+try:
+    SETTINGS_TIMEOUT = float(os.getenv("SETTINGS_TIMEOUT", "2.5"))
+except ValueError:
+    SETTINGS_TIMEOUT = 2.5
+if SETTINGS_TIMEOUT <= 0:
+    SETTINGS_TIMEOUT = 2.5
+try:
+    START_SETTINGS_CACHE_SECONDS = int(os.getenv("START_SETTINGS_CACHE_SECONDS", "120") or "120")
+except ValueError:
+    START_SETTINGS_CACHE_SECONDS = 120
+if START_SETTINGS_CACHE_SECONDS < 0:
+    START_SETTINGS_CACHE_SECONDS = 0
+try:
+    STORE_USER_TIMEOUT = float(os.getenv("STORE_USER_TIMEOUT", "2.0"))
+except ValueError:
+    STORE_USER_TIMEOUT = 2.0
+if STORE_USER_TIMEOUT <= 0:
+    STORE_USER_TIMEOUT = 2.0
 
 _DARK_LOADING_GIF_CACHE: dict[str, bytes] = {}
 # Randomly display up to this many future signals.
@@ -617,17 +636,70 @@ def build_default_start_message(mode: str) -> str:
     )
 
 DEFAULT_START_MESSAGE = build_default_start_message(BOT_MODE)
+_START_SETTINGS_CACHE: dict[str, tuple[dict, float]] = {}
+
+
+def _cache_get(key: str):
+    if START_SETTINGS_CACHE_SECONDS <= 0:
+        return None
+    entry = _START_SETTINGS_CACHE.get(key)
+    if not entry:
+        return None
+    value, ts = entry
+    if (time.monotonic() - ts) > START_SETTINGS_CACHE_SECONDS:
+        return None
+    return value
+
+
+def _cache_set(key: str, value):
+    if START_SETTINGS_CACHE_SECONDS <= 0:
+        return
+    _START_SETTINGS_CACHE[key] = (value, time.monotonic())
+
+
+def fetch_start_assets() -> dict:
+    cached = _cache_get("start_assets")
+    if cached is not None:
+        return cached
+
+    assets = {
+        "start_message": DEFAULT_START_MESSAGE,
+        "promo_image_url": "",
+        "promo_video_url": "",
+        "welcome_image_url": "",
+        "welcome_video_url": "",
+    }
+
+    def _fetch_media(base_url: str, endpoint: str) -> str:
+        try:
+            res = requests.get(f"{base_url}/settings/{endpoint}", timeout=SETTINGS_TIMEOUT)
+            if res.status_code == 200:
+                return resolve_backend_media_ref(base_url, res.json())
+        except Exception:
+            return ""
+        return ""
+
+    for base_url in iter_backend_urls():
+        try:
+            res = requests.get(f"{base_url}/settings/start-message", timeout=SETTINGS_TIMEOUT)
+            if res.status_code == 200:
+                msg = res.json().get("message")
+                if msg:
+                    assets["start_message"] = msg
+        except Exception:
+            continue
+
+        assets["promo_image_url"] = _fetch_media(base_url, "promo-image")
+        assets["promo_video_url"] = _fetch_media(base_url, "promo-video")
+        assets["welcome_image_url"] = _fetch_media(base_url, "welcome-image")
+        assets["welcome_video_url"] = _fetch_media(base_url, "welcome-video")
+        break
+
+    _cache_set("start_assets", assets)
+    return assets
 
 def fetch_start_message():
-    try:
-        res = requests.get(f"{BACKEND_URL}/settings/start-message", timeout=5)
-        if res.status_code == 200:
-            msg = res.json().get("message")
-            if msg:
-                return msg
-    except Exception:
-        pass
-    return DEFAULT_START_MESSAGE
+    return fetch_start_assets().get("start_message", DEFAULT_START_MESSAGE)
 
 def build_absolute_backend_url(base_url: str, value: str) -> str:
     raw = (value or "").strip()
@@ -664,31 +736,11 @@ def resolve_backend_image_ref(base_url: str, payload: dict) -> str:
 
 def fetch_promo_image_url():
     """Fetch promo image URL from backend settings."""
-    for base_url in iter_backend_urls():
-        try:
-            res = requests.get(f"{base_url}/settings/promo-image", timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                image_ref = resolve_backend_media_ref(base_url, data)
-                if image_ref:
-                    return image_ref
-        except Exception:
-            continue
-    return ""
+    return fetch_start_assets().get("promo_image_url", "")
 
 def fetch_welcome_image_url():
     """Fetch welcome image URL from backend settings."""
-    for base_url in iter_backend_urls():
-        try:
-            res = requests.get(f"{base_url}/settings/welcome-image", timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                image_ref = resolve_backend_media_ref(base_url, data)
-                if image_ref:
-                    return image_ref
-        except Exception:
-            continue
-    return ""
+    return fetch_start_assets().get("welcome_image_url", "")
 
 def fetch_menu_image_url():
     """Fetch menu image URL from backend settings."""
@@ -706,31 +758,11 @@ def fetch_menu_image_url():
 
 def fetch_promo_video_url():
     """Fetch promo video URL from backend settings."""
-    for base_url in iter_backend_urls():
-        try:
-            res = requests.get(f"{base_url}/settings/promo-video", timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                media_ref = resolve_backend_media_ref(base_url, data)
-                if media_ref:
-                    return media_ref
-        except Exception:
-            continue
-    return ""
+    return fetch_start_assets().get("promo_video_url", "")
 
 def fetch_welcome_video_url():
     """Fetch welcome video URL from backend settings."""
-    for base_url in iter_backend_urls():
-        try:
-            res = requests.get(f"{base_url}/settings/welcome-video", timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                media_ref = resolve_backend_media_ref(base_url, data)
-                if media_ref:
-                    return media_ref
-        except Exception:
-            continue
-    return ""
+    return fetch_start_assets().get("welcome_video_url", "")
 
 def parse_local_media_ref(media_ref: str):
     raw = (media_ref or "").strip()
@@ -2041,10 +2073,16 @@ async def store_user(update):
         "username": user.username or "Unknown",
         "last_message_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
+    def _post():
+        try:
+            requests.post(f"{BACKEND_URL}/user/store", json=data, timeout=STORE_USER_TIMEOUT)
+        except Exception:
+            pass
+
     try:
-        requests.post(f"{BACKEND_URL}/user/store", json=data, timeout=5)
-    except:
-        pass
+        asyncio.create_task(asyncio.to_thread(_post))
+    except RuntimeError:
+        _post()
 
 # ================= NORMAL MESSAGE =================
 async def normal_message(update, context):
