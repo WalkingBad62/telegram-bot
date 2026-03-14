@@ -768,7 +768,7 @@
             <div class="section-header">
                 <div>
                     <h2>User Daily Limits</h2>
-                    <div class="muted">Set custom daily usage limits per user for Future Signal, YOOAI, or all features. Future Signal is premium-locked by default; set a limit to unlock.</div>
+                    <div class="muted">Set custom daily usage limits per user for Future Signal, YOOAI, or all features.</div>
                 </div>
                 <div class="tag" style="background: rgba(239, 68, 68, 0.12); color: #b91c1c;">Limits</div>
             </div>
@@ -2543,20 +2543,7 @@
                 const tbody = document.getElementById('limitTable').querySelector('tbody');
                 tbody.innerHTML = '';
                 const defaultInfo = document.getElementById('limitDefaultInfo');
-                const formatLimit = (val) => {
-                    const n = parseInt(val, 10);
-                    return n > 0 ? `${n}/day` : 'Locked';
-                };
-                if (data.default_limits) {
-                    const parts = [];
-                    Object.entries(data.default_limits).forEach(([feature, val]) => {
-                        const label = (data.features && data.features[feature]) ? data.features[feature] : feature;
-                        parts.push(`${label}: ${formatLimit(val)}`);
-                    });
-                    defaultInfo.textContent = `Default limits (when no custom limit is set): ${parts.join(' | ')}`;
-                } else {
-                    defaultInfo.textContent = `Default daily limit (when no custom limit is set): ${data.default_limit} per day`;
-                }
+                defaultInfo.textContent = `Default daily limit (when no custom limit is set): ${data.default_limit} per day`;
                 (data.limits || []).forEach(lim => {
                     const tr = document.createElement('tr');
                     // Telegram ID
