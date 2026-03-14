@@ -2080,14 +2080,8 @@ async def store_user(update):
             pass
 
     try:
-        if hasattr(asyncio, "to_thread"):
-            asyncio.create_task(asyncio.to_thread(_post))
-        else:
-            loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, _post)
+        asyncio.create_task(asyncio.to_thread(_post))
     except RuntimeError:
-        _post()
-    except Exception:
         _post()
 
 # ================= NORMAL MESSAGE =================
