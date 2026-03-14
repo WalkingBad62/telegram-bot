@@ -57,6 +57,15 @@ def is_admin(uid): return uid in ADMIN_IDS
 # ================= LOG =================
 logging.basicConfig(level=logging.INFO)
 
+# ================= PERF =================
+async def _run_blocking(func, *args, **kwargs):
+    try:
+        to_thread = asyncio.to_thread
+    except AttributeError:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+    return await to_thread(func, *args, **kwargs)
+
 # ================= MEMORY =================
 custom_commands = {}
 AWAIT_IMAGEAI_KEY = "await_imageai"
@@ -1697,13 +1706,24 @@ async def start(update, context):
         second_message_text = TRADING_WELCOME_TEXT
     else:
         first_message_text = PROMO_TEXT
-        second_message_text = fetch_start_message()
+        second_message_text = None
 
     # --- 1st message: Promo image + promo text ---
-    promo_image_url = fetch_promo_image_url()
-    promo_video_url = fetch_promo_video_url()
-    welcome_image_url = fetch_welcome_image_url() or promo_image_url
-    welcome_video_url = fetch_welcome_video_url()
+    tasks = [
+        _run_blocking(fetch_promo_image_url),
+        _run_blocking(fetch_promo_video_url),
+        _run_blocking(fetch_welcome_image_url),
+        _run_blocking(fetch_welcome_video_url),
+    ]
+    if BOT_MODE != "trading":
+        tasks.append(_run_blocking(fetch_start_message))
+    results = await asyncio.gather(*tasks)
+    promo_image_url = results[0]
+    promo_video_url = results[1]
+    welcome_image_url = results[2] or promo_image_url
+    welcome_video_url = results[3]
+    if second_message_text is None:
+        second_message_text = results[4] if len(results) > 4 else DEFAULT_START_MESSAGE
     if promo_video_url:
         sent = await send_video_reply(update.message, promo_video_url, first_message_text)
         if not sent:
